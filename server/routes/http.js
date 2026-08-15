@@ -83,6 +83,15 @@ function handleHttp(req, res) {
         return;
     }
 
+    // ★ 前端配置接口：让页面自动感知 OPEN_REGISTER 等开关（验证码栏显示/隐藏）
+    if (pathname === '/api/config' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({
+            openRegister: !!config.OPEN_REGISTER
+        }));
+        return;
+    }
+
     // 发送验证码（含冷却）
     if (pathname === '/api/send-code' && req.method === 'POST') {
         let body = '';

@@ -164,7 +164,7 @@
                 <label>邮箱地址</label>
                 <input type="email" id="regEmail" placeholder="example@qq.com" required>
             </div>
-            <div class="form-group">
+            <div class="form-group" id="codeGroup">
                 <label>验证码</label>
                 <div class="code-row">
                     <input type="text" id="regCode" placeholder="6位数字" maxlength="6" required>
@@ -208,6 +208,16 @@
 </div>
 
 <script>
+    // ★ 自动感知服务器配置：OPEN_REGISTER=true 时隐藏验证码栏，false 时显示
+    (async () => {
+        try {
+            const res = await fetch('/api/config');
+            const cfg = await res.json();
+            const codeGroup = document.getElementById('codeGroup');
+            if (codeGroup) codeGroup.style.display = cfg.openRegister ? 'none' : '';
+        } catch(e) { /* 配置获取失败时保持默认（显示验证码） */ }
+    })();
+
     let isLogin = false;
 
     function toggleForm() {

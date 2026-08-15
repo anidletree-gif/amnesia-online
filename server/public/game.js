@@ -1030,6 +1030,16 @@ ws.onclose = () => {
     else location.reload();
 };
 
+    // ★ 退出登录：断开连接、清理语音/本地会话、清除登录态并跳回登录页
+    window.logout = () => {
+        try { if (ws) { ws.onclose = null; ws.close(); ws = null; } } catch(_) {}
+        try { destroyRecorder(); } catch(_) {}
+        try { teardownPeers(); } catch(_) {}
+        try { audioSessions.forEach((s) => cleanupAudioSession(s)); audioSessions.clear(); } catch(_) {}
+        try { localStorage.removeItem('amnesia_user'); } catch(_) {}
+        location.href = '/login.html';
+    };
+
     window.addEventListener('beforeunload', () => destroyRecorder());
     console.log('✅ 完整功能版已加载');
 })();
