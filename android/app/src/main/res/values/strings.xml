@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">失忆症Online</string>
+    <string name="app_slogan">记忆裂痕 · 多人联机身份推理</string>
+
+    <string name="login_title">失忆症 Online</string>
+    <string name="login_subtitle">记忆裂痕 · 身份推理</string>
+    <string name="login_btn">登 录</string>
+    <string name="register_btn">注 册</string>
+    <string name="switch_to_register">没有账号？去注册</string>
+    <string name="switch_to_login">已有账号？去登录</string>
+    <string name="hint_email">邮箱</string>
+    <string name="hint_nickname">昵称（注册时设置）</string>
+    <string name="hint_password">密码</string>
+    <string name="hint_code">验证码</string>
+    <string name="send_code">发送验证码</string>
+    <string name="resend_code">重新发送(%1$ds)</string>
+    <string name="open_register_hint">开放注册模式，无需验证码</string>
+    <string name="hint_server">服务器地址（如 192.168.2.13:3000）</string>
+
+    <string name="lobby_create">创建房间</string>
+    <string name="lobby_join">加入房间</string>
+    <string name="lobby_rooms">公开房间</string>
+    <string name="lobby_empty">暂无公开房间，点击上方创建</string>
+    <string name="lobby_logout">退出登录</string>
+    <string name="lobby_room_name">房间名称</string>
+
+    <string name="game_chat_hint">输入消息…</string>
+    <string name="game_send">发送</string>
+    <string name="game_start">开始游戏</string>
+    <string name="game_leave">离开房间</string>
+    <string name="game_reset">重置房间</string>
+    <string name="game_rules">规则</string>
+    <string name="game_kick">踢出</string>
+    <string name="game_speak">结束发言</string>
+    <string name="game_vote_abstain">弃权</string>
+
+    <string name="room_join_hint">请输入房间号（6位大写字母）</string>
+    <string name="server_default">http://192.168.2.13:3000</string>
+    <string name="ws_default">ws://192.168.2.13:3000</string>
+</resources>

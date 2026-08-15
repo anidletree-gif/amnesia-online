@@ -1,0 +1,188 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fillViewport="true"
+    android:scrollbars="none">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="24dp"
+        android:gravity="center_horizontal">
+
+        <!-- 标题区 -->
+        <TextView
+            android:id="@+id/loginTitle"
+            style="@style/Text.Title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="72dp"
+            android:text="@string/login_title"
+            android:textSize="34sp" />
+
+        <TextView
+            android:id="@+id/loginSubtitle"
+            style="@style/Text.BodySecondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/login_subtitle"
+            android:textSize="13sp" />
+
+        <View
+            android:layout_width="120dp"
+            android:layout_height="1dp"
+            android:layout_marginTop="18dp"
+            android:background="@drawable/divider" />
+
+        <!-- 服务器地址 -->
+        <EditText
+            android:id="@+id/inputServer"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="36dp"
+            android:background="@drawable/memory_input_selector"
+            android:drawablePadding="10dp"
+            android:hint="@string/hint_server"
+            android:inputType="textUri"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:text="@string/server_default"
+            android:textColor="@color/text_input"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <!-- 邮箱 -->
+        <EditText
+            android:id="@+id/inputEmail"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/memory_input_selector"
+            android:drawablePadding="10dp"
+            android:hint="@string/hint_email"
+            android:inputType="textEmailAddress"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textColor="@color/text_input"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <!-- 昵称（注册时显示） -->
+        <EditText
+            android:id="@+id/inputNickname"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/memory_input_selector"
+            android:drawablePadding="10dp"
+            android:hint="@string/hint_nickname"
+            android:inputType="text"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textColor="@color/text_input"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="14sp"
+            android:visibility="gone" />
+
+        <!-- 验证码（注册时按服务器模式动态显示） -->
+        <LinearLayout
+            android:id="@+id/codeRow"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="14dp"
+            android:orientation="horizontal"
+            android:visibility="gone">
+
+            <EditText
+                android:id="@+id/inputCode"
+                android:layout_width="0dp"
+                android:layout_height="46dp"
+                android:layout_weight="1"
+                android:background="@drawable/memory_input_selector"
+                android:drawablePadding="10dp"
+                android:hint="@string/hint_code"
+                android:inputType="text"
+                android:paddingStart="16dp"
+                android:paddingEnd="16dp"
+                android:textColor="@color/text_input"
+                android:textColorHint="@color/text_secondary"
+                android:textSize="14sp" />
+
+            <Button
+                android:id="@+id/btnSendCode"
+                android:layout_width="wrap_content"
+                android:layout_height="46dp"
+                android:layout_marginStart="10dp"
+                android:background="@drawable/memory_btn_selector"
+                android:paddingStart="18dp"
+                android:paddingEnd="18dp"
+                android:stateListAnimator="@null"
+                android:text="@string/send_code"
+                android:textColor="@color/text_primary"
+                android:textSize="13sp" />
+        </LinearLayout>
+
+        <!-- 密码 -->
+        <EditText
+            android:id="@+id/inputPassword"
+            android:layout_width="match_parent"
+            android:layout_height="46dp"
+            android:layout_marginTop="14dp"
+            android:background="@drawable/memory_input_selector"
+            android:drawablePadding="10dp"
+            android:hint="@string/hint_password"
+            android:inputType="textPassword"
+            android:paddingStart="16dp"
+            android:paddingEnd="16dp"
+            android:textColor="@color/text_input"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="14sp" />
+
+        <!-- 错误提示 -->
+        <TextView
+            android:id="@+id/loginError"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:textColor="@color/error_red"
+            android:textSize="13sp"
+            android:visibility="gone" />
+
+        <!-- 主按钮 -->
+        <Button
+            android:id="@+id/btnLogin"
+            android:layout_width="match_parent"
+            android:layout_height="48dp"
+            android:layout_marginTop="20dp"
+            android:background="@drawable/memory_btn_selector"
+            android:stateListAnimator="@null"
+            android:text="@string/login_btn"
+            android:textColor="@color/text_primary"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <!-- 切换登录/注册 -->
+        <TextView
+            android:id="@+id/btnSwitchMode"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="18dp"
+            android:padding="8dp"
+            android:text="@string/switch_to_register"
+            android:textColor="@color/accent_gold"
+            android:textSize="14sp" />
+
+        <TextView
+            android:id="@+id/tvVersion"
+            style="@style/Text.BodySecondary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="48dp"
+            android:text="Native Client v2.0 · 失忆症Online"
+            android:textSize="11sp" />
+    </LinearLayout>
+</ScrollView>

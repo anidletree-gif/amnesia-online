@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <title>失忆症Online · 记忆裂痕</title>
+    <script src="vendor/tailwind.js"></script>
+    <script>tailwind.config={theme:{extend:{colors:{'void':'#0c1210','memory':'#d4c9b8','fade':'#a69b8a','crack':'#8b7a6b','mist':'#e3dbcd'}}}}</script>
+    <style>
+    .player-volume-bar {
+    height: 4px;
+    background: #4caf50;
+    width: 0%;
+    margin: 2px 0;
+    transition: width 0.1s, opacity 0.1s;
+    opacity: 0;
+}
+.flip-card img {
+    width: 100%;
+    height: 70%;
+    object-fit: contain;
+    border-radius: 4px;
+}
+        @import url('vendor/fonts.css');
+        *{font-family:'Source Code Pro','Courier New',monospace}h1,h2,h3,.serif{font-family:'Playfair Display','Times New Roman',serif;font-weight:500;letter-spacing:1px}
+        body{background-color:#0c1210;background-image:radial-gradient(circle at 30% 40%,rgba(180,150,110,0.05) 0%,transparent 40%),repeating-linear-gradient(0deg,rgba(140,110,80,0.03) 0px,transparent 1px,transparent 40px)}
+        .memory-card{background:rgba(25,30,28,0.7);backdrop-filter:blur(8px);border:1px solid rgba(180,150,120,0.15);box-shadow:0 15px 30px -10px rgba(0,0,0,0.5),0 0 0 1px rgba(210,180,140,0.05) inset;border-radius:4px 24px 4px 24px;transition:border-radius 0.2s,box-shadow 0.2s;padding:20px;margin-bottom:16px}
+        .memory-card:hover{border-radius:24px 4px 24px 4px;box-shadow:0 20px 35px -8px rgba(0,0,0,0.6),0 0 0 1px rgba(200,170,130,0.15) inset}
+        .memory-input{background:rgba(18,22,20,0.6);backdrop-filter:blur(4px);border:1px solid rgba(150,120,90,0.25);border-radius:0 20px 0 20px;color:#e3dbcd;padding:12px 20px;width:100%}
+        .memory-input:focus{outline:none;border-color:#b89a7a;box-shadow:0 0 0 2px rgba(180,140,100,0.2);border-radius:20px 0 20px 0}
+        .memory-btn{background:linear-gradient(145deg,#2a2a24,#1a1a16);border:1px solid #7a6a58;border-radius:2px 16px 2px 16px;color:#d4c9b8;box-shadow:0 4px 0 #0e0e0a,0 2px 6px rgba(0,0,0,0.3);font-weight:500;text-transform:uppercase;letter-spacing:1px;padding:10px 20px;cursor:pointer;width:100%}
+        .memory-btn:active{transform:translateY(3px);box-shadow:0 1px 0 #0e0e0a;border-radius:16px 2px 16px 2px}
+        .memory-btn:disabled{opacity:0.5;transform:none;box-shadow:0 2px 0 #0e0e0a;filter:grayscale(0.6)}
+        .memory-btn-danger{background:linear-gradient(145deg,#4a2a2a,#2e1a1a);border-color:#a06060;color:#ecc0c0}
+        .player-badge{background:rgba(30,28,26,0.7);backdrop-filter:blur(4px);border:1px dashed rgba(150,120,90,0.3);border-radius:2px 20px 2px 20px;padding:12px 8px;text-align:center;box-shadow:0 2px 6px rgba(0,0,0,0.2);position:relative}
+        .player-badge.dead{opacity:0.5;filter:grayscale(1);border-color:#604040}
+        .player-badge.disconnected{border-color:#a07030;background:rgba(40,35,20,0.7)}
+        .chat-log{background:rgba(12,15,13,0.5);backdrop-filter:blur(4px);border:1px solid rgba(140,110,80,0.15);border-radius:2px 24px 2px 24px;padding:14px;color:#c4b8a8;height:150px;overflow-y:auto}
+        ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#1a1a18}::-webkit-scrollbar-thumb{background:#7a6a58;border-radius:10px}
+        .modal{display:none;position:fixed;z-index:1000;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);align-items:center;justify-content:center}
+        .modal-content{max-width:500px;width:90%;max-height:70vh;overflow-y:auto;position:relative}
+        .close{position:absolute;right:20px;top:15px;font-size:28px;cursor:pointer;color:#a69b8a}
+        .avatar-img{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #b89a7a;cursor:pointer}
+        .kick-btn{position:absolute;top:-4px;right:-4px;background:#4a2a2a;border:1px solid #a06060;color:#ecc0c0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
+        .player-avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;border:1px solid #b89a7a;margin-right:6px;vertical-align:middle}
+    </style>
+</head>
+<body class="text-[#d4c9b8] antialiased relative min-h-screen">
+<div class="fixed inset-0 z-[-1] opacity-20 pointer-events-none" style="background-image:url('data:image/svg+xml,%3Csvg viewBox=%220 0 200 200%22 xmlns=%22http://www.w3.org/2000/svg%22%3E%3Cfilter id=%22noiseFilter%22%3E%3CfeTurbulence type=%22fractalNoise%22 baseFrequency=%220.8%22 numOctaves=%224%22/%3E%3C/filter%3E%3Crect width=%22100%25%22 height=%22100%25%22 filter=%22url(%23noiseFilter)%22 opacity=%220.08%22/%3E%3C/svg%3E')"></div>
+
+<!-- 顶部用户栏 -->
+<div id="userBar" style="position:fixed;top:10px;left:10px;z-index:50;display:flex;align-items:center;gap:10px;">
+    <img id="avatarImg" class="avatar-img" src="/avatars/default.png" onclick="document.getElementById('avatarInput').click()" onerror="this.src='data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%2220%22 fill=%22%234a3a2a%22/%3E%3Ctext x=%2220%22 y=%2226%22 text-anchor=%22middle%22 fill=%22%23d4c9b8%22 font-size=%2218%22%3E?%3C/text%3E%3C/svg%3E'">
+    <span id="userNickname" class="text-sm text-[#d4c9b8]"></span>
+    <button class="memory-btn text-xs py-1 px-3 w-auto" onclick="logout()">退出</button>
+</div>
+<input type="file" id="avatarInput" accept="image/*" style="display:none;" onchange="uploadAvatar(event)">
+
+<div class="relative z-10 max-w-[600px] mx-auto px-4 py-16 pb-20" id="app">
+    <div id="loginPanel" class="memory-card">
+        <div class="text-center mb-6"><div class="text-5xl mb-3 opacity-80 serif">◈</div><h1 class="text-5xl font-semibold tracking-wider serif text-[#d4c9b8]">失忆症</h1><div class="flex items-center justify-center gap-3 mt-1"><span class="text-xs tracking-[0.3em] text-[#a69b8a]">AMNESIA</span><span class="text-[#b89a7a] text-xs">by闲树</span></div></div>
+        <input id="playerNameInput" type="hidden" value="">
+        <div class="grid grid-cols-3 gap-2">
+            <button class="memory-btn" onclick="showCreate()">✧创建</button>
+            <button class="memory-btn" onclick="showJoin()">⌘加入</button>
+            <button class="memory-btn" onclick="showRoomList()">☷列表</button>
+        </div>
+        <div id="createPanel" class="mt-5 space-y-3" style="display:none">
+            <select id="presetSelect" class="memory-input"></select>
+            <label class="flex items-center gap-2"><input type="checkbox" id="publicRoomCheck" checked>公开房间</label>
+            <button class="memory-btn" onclick="createRoom()">✧建立档案</button>
+        </div>
+        <div id="joinPanel" class="mt-5 space-y-3" style="display:none">
+            <input id="roomIdInput" class="memory-input uppercase text-center text-lg tracking-widest" placeholder="档案编号" maxlength="6">
+            <button class="memory-btn" onclick="joinRoom()">⌘加入档案</button>
+        </div>
+    </div>
+
+    <div id="gamePanel" style="display:none">
+        <div class="memory-card flex items-center justify-between">
+            <div><span class="text-2xl opacity-60">⌘</span><span id="roomCodeDisplay" class="font-mono text-2xl ml-2">----</span></div>
+            <div><span id="presetInfo" class="text-[10px] bg-black/20 px-3 py-1 rounded-sm"></span><button class="memory-btn-danger w-10 h-10 rounded-sm ml-2" onclick="leaveRoom()">✕</button></div>
+        </div>
+        <div class="memory-card">
+            <h3 class="text-sm font-semibold tracking-wider text-[#b89a7a] mb-2">◈在场人员</h3>
+            <div id="playerList" class="grid grid-cols-3 gap-3 my-3"></div>
+            <button id="startGameBtn" class="memory-btn" onclick="startGame()" disabled><span id="startBtnText">等待其他人员…</span></button>
+        </div>
+        <div id="actionCard" class="memory-card" style="display:none"></div>
+        <div class="memory-card">
+            <h3 class="text-xs uppercase tracking-wider text-[#a69b8a] mb-2">☷记录片段</h3>
+            <div id="chatLogArea" class="chat-log"></div>
+            <div class="flex gap-2 mt-3">
+                <input id="chatInput" class="memory-input py-2" placeholder="写下片段…" disabled>
+                <button id="sendChatBtn" class="memory-btn w-auto px-6" onclick="sendChat()" disabled>↗</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- 悬浮按钮（右下角，不遮挡右上角退出键） -->
+<div id="gameCornerButtons" class="fixed right-4 bottom-28 z-30 flex flex-col gap-2" style="display:none;">
+    <button class="memory-card w-11 h-11 rounded-full flex items-center justify-center text-xl" onclick="showRecords()">⌛</button>
+    <button class="memory-card w-11 h-11 rounded-full flex items-center justify-center text-xl" onclick="showRules()">◈</button>
+</div>
+
+<!-- 模态框 -->
+<div id="ruleModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('ruleModal')">&times;</span><h2 class="text-2xl font-serif mb-4">◈档案规则</h2><div id="ruleContent"></div></div></div>
+<div id="recordModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('recordModal')">&times;</span><h2 class="text-2xl font-serif mb-4">⌛你的记忆碎片</h2><div id="recordContent"></div></div></div>
+<div id="roomListModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('roomListModal')">&times;</span><h2 class="text-2xl font-serif mb-4">⌘开放档案室</h2><div id="roomListContent"></div></div></div>
+<div id="checkResultToast" class="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 memory-card px-8 py-5 text-2xl font-serif shadow-2xl hidden z-50"></div>
+<script src="game.js?v=final3"></script>
+</body>
+</html>

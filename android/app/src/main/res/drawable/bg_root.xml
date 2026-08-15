@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 应用根背景：深墨绿黑 + 中部淡金径向光晕模拟 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape>
+            <solid android:color="@color/bg" />
+        </shape>
+    </item>
+    <item android:gravity="center" android:width="480dp" android:height="720dp">
+        <shape>
+            <gradient
+                android:type="radial"
+                android:gradientRadius="360dp"
+                android:startColor="#14B49678"
+                android:centerColor="#0AB49678"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+</layer-list>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 输入框聚焦：圆角反转 20 0 20 0 + 金色边框 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#CC121614" />
+    <stroke android:width="1dp" android:color="@color/accent_gold" />
+    <corners
+        android:topLeftRadius="20dp"
+        android:topRightRadius="0dp"
+        android:bottomLeftRadius="20dp"
+        android:bottomRightRadius="0dp" />
+</shape>

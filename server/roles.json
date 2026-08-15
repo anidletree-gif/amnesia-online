@@ -1,0 +1,66 @@
+{
+  "凶手": {
+    "camp": "killer",
+    "kill": "always",
+    "check": "fixed_non_killer",
+    "flip": "match_self",
+    "awake": false,
+    "special": null
+  },
+  "虚构者": {
+    "camp": "killer",
+    "kill": "conditional_awake",
+    "check": "fixed_non_killer",
+    "flip": "conditional_fabricator",
+    "awake": false,
+    "special": "fabricator"
+  },
+  "侦探": {
+    "camp": "good",
+    "kill": "never",
+    "check": "true",
+    "flip": "match_self",
+    "awake": false,
+    "special": null
+  },
+  "错构者": {
+    "camp": "good",
+    "kill": "never",
+    "check": "misconstruct",
+    "flip": "match_self",
+    "awake": false,
+    "special": null
+  },
+  "精神分裂": {
+    "camp": "good",
+    "kill": "never",
+    "check": "fixed_killer",
+    "flip": "always_die",
+    "awake": false,
+    "special": null
+  },
+  "精神病": {
+    "camp": "neutral",
+    "kill": "never",
+    "check": "fixed_non_killer",
+    "flip": "never_die",
+    "awake": false,
+    "special": null
+  },
+  "失忆者": {
+    "camp": "good",
+    "kill": "never",
+    "check": "fixed_non_killer",
+    "flip": "always_die",
+    "awake": false,
+    "special": null
+  },
+  "人格分裂": {
+    "camp": "neutral",
+    "kill": "copy",
+    "check": "copy",
+    "flip": "match_self",
+    "awake": false,
+    "special": "dissociative"
+  }
+}

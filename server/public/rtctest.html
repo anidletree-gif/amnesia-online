@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>失忆症 · WebRTC 语音测试台</title>
+<style>
+ body{background:#0c1210;color:#d4c9b8;font-family:system-ui,-apple-system,sans-serif;margin:0;padding:14px;min-height:100vh}
+ h1{font-size:18px;margin:0 0 12px;color:#e3dbcd}
+ .card{background:#16201b;border:1px solid #2a3a30;border-radius:12px;padding:12px;margin-bottom:12px}
+ .row{display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap}
+ input,select{background:#1e2a23;color:#d4c9b8;border:1px solid #3a4a3e;border-radius:8px;padding:9px 10px;font-size:14px;box-sizing:border-box;flex:1;min-width:100px}
+ button{background:#5f7e6b;color:#fff;border:none;border-radius:8px;padding:9px 14px;font-size:14px;cursor:pointer}
+ button:active{opacity:.75}
+ button:disabled{opacity:.4}
+ #talkBtn{width:100%;height:64px;border-radius:12px;font-size:18px;background:#3a4a3e;color:#d4c9b8;border:none}
+ #talkBtn.pressed{background:#8b3a3a;color:#fff}
+ #status{font-size:12px;color:#a69b8a;white-space:pre-wrap;word-break:break-all;max-height:130px;overflow-y:auto;margin-top:6px}
+ .player{display:flex;justify-content:space-between;align-items:center;padding:7px 8px;border-bottom:1px solid #22302a;font-size:14px}
+ .badge{font-size:12px;color:#a69b8a}
+ .ok{color:#7ecb8f}.bad{color:#e07a7a}
+ #meter{height:8px;background:#1e2a23;border-radius:4px;overflow:hidden;margin-top:10px}
+ #meterFill{height:100%;width:0;background:#7ecb8f;transition:width .1s}
+ .hint{font-size:12px;color:#8b9b8f;line-height:1.7;margin-top:8px}
+ .warn{background:#3a2e20;border:1px solid #6b5424;color:#e8c987;border-radius:8px;padding:8px 10px;font-size:12px;margin-bottom:10px}
+</style>
+</head>
+<body>
+<h1>🔊 失忆症 · WebRTC 语音测试台</h1>
+<div id="noWebrtc" class="warn" style="display:none">⚠️ 当前环境不支持 WebRTC（getUserMedia/RTCPeerConnection 不可用），无法测试 P2P 语音。请使用 Chrome/Edge/现代浏览器或系统浏览器打开。</div>
+
+<div class="card">
+  <div class="row">
+    <input type="text" id="nick" placeholder="昵称" value="测试A">
+    <input type="text" id="roomId" placeholder="房间号（建房时自动生成）">
+  </div>
+  <div class="row">
+    <button id="createBtn">🏠 建房</button>
+    <button id="joinBtn">🚪 加入</button>
+    <button id="leaveBtn">🚪 离开</button>
+  </div>
+  <div id="status">未连接服务器</div>
+</div>
+
+<div class="card">
+  <div class="row"><b>房间玩家</b><span class="badge" id="myNum"></span></div>
+  <div id="players"><span class="badge">（加入房间后显示）</span></div>
+</div>
+
+<div class="card">
+  <button id="talkBtn" disabled>按住说话</button>
+  <div id="meter"><div id="meterFill"></div></div>
+  <div class="hint">
+    <b>使用方法：</b>两台设备打开本页 → 设备A点「建房」→ 设备B填房间号点「加入」→
+    按住说话，验证对面能否听到。<br>
+    <b>原理：</b>语音走 WebRTC P2P 直连（<b>不经过服务器</b>），服务器只转发握手信令。
+    出现「⚡已连接」即 P2P 通道建立成功。<br>
+    <b>注意：</b>浏览器首次会请求麦克风权限，请允许。
+  </div>
+</div>
+
+<script>
+(function(){
+'use strict';
+var ws = null, myNumber = 0, roomId = '', players = [];
+var pcMap = new Map(), pendingIce = new Map(), remoteAudios = new Map();
+var makingOffer = false, localStream = null, audioCtx = null, analyser = null, meterRAF = null;
+var talkHeld = false;
+
+var $ = function(id){ return document.getElementById(id); };
+var RTC_CONFIG = { iceServers: [ { urls: ['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302'] } ] };
+
+function log(){ var el = $('status'); var t = '[' + new Date().toLocaleTimeString() + '] ' + Array.prototype.join.call(arguments,' '); el.textContent = t + '\n' + el.textContent.slice(0,900); }
+
+// ===== WebSocket =====
+function connect(){
+  if (ws && ws.readyState === 1) return;
+  if (ws) { ws.onclose = null; try{ ws.close(); }catch(e){} }
+  var proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  ws = new WebSocket(proto + '//' + location.host + '?playerId=rtctest-' + Math.random().toString(36).slice(2,10));
+  ws.onopen = function(){ log('✅ 已连接服务器'); };
+  ws.onclose = function(){ log('❌ 与服务器断开'); resetRoom(); };
+  ws.onmessage = function(ev){
+    var msg; try{ msg = JSON.parse(ev.data); }catch(e){ return; }
+    switch(msg.type){
+      case 'room_created': roomId = msg.roomId; myNumber = 1; $('roomId').value = roomId; log('🏠 建房成功 房间号', roomId); updateTalkBtn(); break;
+      case 'joined': roomId = msg.roomId; myNumber = msg.yourNumber; log('🚪 加入成功 房间号', roomId, '我的编号', myNumber); updateTalkBtn(); reconcile(); break;
+      case 'player_list': players = msg.players || []; renderPlayers(); reconcile(); break;
+      case 'signal': handleSignal(msg.fromNumber, msg.signal); break;
+      case 'error': log('⚠️ 服务器:', msg.message); break;
+      case 'connected': break;
+      default: break;
+    }
+  };
+}
+
+function resetRoom(){
+  myNumber = 0; roomId = ''; players = []; renderPlayers(); teardownAll();
+  $('myNum').textContent = ''; $('roomId').value = ''; updateTalkBtn();
+}
+
+function sendSignal(targetNumber, signal){
+  log('DEBUG: sendSignal to=' + targetNumber + ' type=' + (signal && signal.type) + ' wsState=' + (ws ? ws.readyState : 'null'));
+  if (!ws || ws.readyState !== 1) return;
+  try{ ws.send(JSON.stringify({ type:'signal', targetNumber:targetNumber, signal:signal })); }catch(e){ log('DEBUG: sendSignal ERR ' + e.message); }
+}
+
+// ===== WebRTC 核心 =====
+function ensurePC(num){
+  var pc = pcMap.get(num);
+  if (pc) return pc;
+  pc = new RTCPeerConnection(RTC_CONFIG);
+  pcMap.set(num, pc);
+  if (localStream) localStream.getTracks().forEach(function(t){ pc.addTrack(t, localStream); });
+  pc.onnegotiationneeded = async function(){
+    try{
+      makingOffer = true;
+      log('DEBUG: negotiationneeded for ' + num + ' state=' + pc.signalingState);
+      await pc.setLocalDescription();
+      sendSignal(num, { type:'offer', sdp: pc.localDescription });
+    }catch(e){ log('协商失败:', e.message); }
+    finally{ makingOffer = false; }
+  };
+  pc.onicecandidate = function(e){
+    if (e.candidate) sendSignal(num, { type:'candidate', candidate: e.candidate });
+  };
+  pc.ontrack = function(e){
+    var audio = remoteAudios.get(num);
+    if (!audio){
+      audio = new Audio(); audio.autoplay = true; audio.style.display = 'none';
+      document.body.appendChild(audio); remoteAudios.set(num, audio);
+    }
+    audio.srcObject = e.streams[0];
+    log('🔊 对端', num, '媒体接入，可听到声音');
+  };
+  pc.onconnectionstatechange = function(){
+    var st = pc.connectionState;
+    if (st === 'connected') log('⚡ 与', num, 'P2P 已连接（语音不过服务器）');
+    else if (st === 'connecting') log('⏳ 与', num, '正在建立 P2P...');
+    else if (st === 'failed'){ log('❌ 与', num, 'P2P 失败'); teardown(num); }
+    else if (st === 'closed'){ teardown(num); }
+    renderPlayers();
+  };
+  return pc;
+}
+
+async function handleSignal(fromNum, signal){
+  if (!signal || typeof signal.type !== 'string') return;
+  log('DEBUG: handleSignal from=' + fromNum + ' type=' + signal.type);
+  var polite = myNumber < fromNum;
+  var pc = ensurePC(fromNum);
+  try{
+    if (signal.type === 'offer'){
+      if (!polite && makingOffer){ log('🤝 glare 冲突，忽略本次 offer（对方将重试）'); return; }
+      if (pc.signalingState !== 'stable'){
+        await Promise.all([pc.setLocalDescription(), pc.setRemoteDescription(signal.sdp)]);
+      } else {
+        await pc.setRemoteDescription(signal.sdp);
+      }
+      await pc.setLocalDescription();
+      sendSignal(fromNum, { type:'answer', sdp: pc.localDescription });
+    } else if (signal.type === 'answer'){
+      if (pc.signalingState === 'have-local-offer') await pc.setRemoteDescription(signal.sdp);
+      else log('⏭️ 跳过 answer（状态:', pc.signalingState, '）');
+    } else if (signal.type === 'candidate'){
+      if (pc.remoteDescription) await pc.addIceCandidate(signal.candidate);
+      else { var list = pendingIce.get(fromNum) || []; list.push(signal.candidate); pendingIce.set(fromNum, list); }
+    }
+    flushPending(fromNum, pc);
+  }catch(e){ log('信令处理异常:', e.message); }
+}
+
+function flushPending(num, pc){
+  var list = pendingIce.get(num) || [];
+  if (list.length && pc.remoteDescription){
+    pendingIce.delete(num);
+    list.forEach(function(c){ try{ pc.addIceCandidate(c); }catch(e){} });
+  }
+}
+
+function reconcile(){
+  if (!myNumber) return;
+  var nums = {};
+  players.forEach(function(p){ if (p.number !== myNumber) nums[p.number] = true; });
+  pcMap.forEach(function(pc, num){
+    if (!nums[num]) teardown(num);
+  });
+  Object.keys(nums).forEach(function(num){ ensurePC(parseInt(num,10)); });
+}
+
+function teardown(num){
+  var pc = pcMap.get(num);
+  if (pc){ try{ pc.close(); }catch(e){} pcMap.delete(num); }
+  var a = remoteAudios.get(num);
+  if (a){ try{ a.pause(); a.srcObject = null; }catch(e){} a.remove(); remoteAudios.delete(num); }
+  pendingIce.delete(num);
+}
+
+function teardownAll(){ pcMap.forEach(function(pc, num){ teardown(num); }); }
+
+// ===== 麦克风 =====
+function getMic(){
+  if (localStream) return Promise.resolve(localStream);
+  return navigator.mediaDevices.getUserMedia({ audio: { echoCancellation:true, noiseSuppression:true } })
+    .then(function(stream){
+      localStream = stream;
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+      var src = audioCtx.createMediaStreamSource(stream);
+      analyser = audioCtx.createAnalyser(); analyser.fftSize = 256;
+      src.connect(analyser);
+      // 为已存在的对端补推轨道
+      log('DEBUG: getMic pcMap.size=' + pcMap.size);
+      pcMap.forEach(function(pc){
+        stream.getTracks().forEach(function(t){
+          try{ if (!pc.getSenders().some(function(s){ return s.track === t; })){ log('DEBUG: addTrack kind=' + t.kind + ' pcState=' + pc.signalingState); pc.addTrack(t, stream); } }catch(e){ log('DEBUG: addTrack ERR ' + e.message); }
+        });
+      });
+      log('🎤 麦克风就绪');
+      return stream;
+    })
+    .catch(function(e){ log('❌ 麦克风获取失败:', e.message, '（请检查权限设置）'); return null; });
+}
+
+function setTalk(on){
+  talkHeld = on;
+  var btn = $('talkBtn');
+  btn.classList.toggle('pressed', on);
+  if (on){
+    getMic().then(function(stream){
+      if (!stream || !talkHeld) return;
+      stream.getAudioTracks().forEach(function(t){ t.enabled = true; });
+      // 解除自动播放限制
+      remoteAudios.forEach(function(a){ a.play().catch(function(){}); });
+      if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      startMeter();
+    });
+  } else {
+    if (localStream) localStream.getAudioTracks().forEach(function(t){ t.enabled = false; });
+    stopMeter();
+  }
+}
+
+function startMeter(){
+  if (!analyser || meterRAF) return;
+  var data = new Uint8Array(analyser.frequencyBinCount);
+  function tick(){
+    analyser.getByteFrequencyData(data);
+    var sum = 0; for (var i = 0; i < data.length; i++) sum += data[i];
+    var v = sum / data.length / 255;
+    $('meterFill').style.width = Math.min(100, Math.round(v * 300)) + '%';
+    meterRAF = requestAnimationFrame(tick);
+  }
+  tick();
+}
+function stopMeter(){
+  if (meterRAF){ cancelAnimationFrame(meterRAF); meterRAF = null; }
+  $('meterFill').style.width = '0';
+}
+
+// ===== UI =====
+function renderPlayers(){
+  var el = $('players');
+  if (!players.length){ el.innerHTML = '<span class="badge">（加入房间后显示）</span>'; return; }
+  var html = '';
+  players.forEach(function(p){
+    var pc = pcMap.get(p.number);
+    var st = p.number === myNumber ? '<span class="badge ok">我</span>'
+      : (pc && pc.connectionState === 'connected') ? '<span class="badge ok">⚡已连接</span>'
+      : (pc && pc.connectionState === 'connecting') ? '<span class="badge">⏳连接中</span>'
+      : '<span class="badge">未连接</span>';
+    html += '<div class="player"><span>' + p.number + '. ' + p.name + (p.connected ? '' : ' <span class="bad">(离线)</span>') + '</span>' + st + '</div>';
+  });
+  el.innerHTML = html;
+  $('myNum').textContent = myNumber ? ('我的编号: ' + myNumber + ' | 房间: ' + roomId) : '';
+}
+
+function updateTalkBtn(){
+  var on = !!myNumber;
+  $('talkBtn').disabled = !on;
+  $('talkBtn').textContent = on ? '按住说话' : '先建房或加入';
+}
+
+// ===== 事件绑定 =====
+$('createBtn').onclick = function(){
+  var name = $('nick').value.trim() || ('玩家' + Math.floor(Math.random()*1000));
+  connect();
+  setTimeout(function(){
+    if (!ws || ws.readyState !== 1){ log('❌ 服务器未连接'); return; }
+    ws.send(JSON.stringify({ type:'create', name:name, preset:'6人基础' }));
+  }, 300);
+};
+$('joinBtn').onclick = function(){
+  var rid = $('roomId').value.trim().toUpperCase();
+  var name = $('nick').value.trim() || ('玩家' + Math.floor(Math.random()*1000));
+  if (!rid){ log('⚠️ 请填写房间号'); return; }
+  connect();
+  setTimeout(function(){
+    if (!ws || ws.readyState !== 1){ log('❌ 服务器未连接'); return; }
+    ws.send(JSON.stringify({ type:'join', roomId:rid, name:name }));
+  }, 300);
+};
+$('leaveBtn').onclick = function(){
+  if (ws){ ws.onclose = null; try{ ws.close(); }catch(e){} ws = null; }
+  resetRoom();
+  log('已离开');
+};
+
+var talkBtn = $('talkBtn');
+talkBtn.addEventListener('pointerdown', function(e){ e.preventDefault(); if (!talkBtn.disabled) setTalk(true); });
+talkBtn.addEventListener('pointerup', function(e){ e.preventDefault(); setTalk(false); });
+talkBtn.addEventListener('pointercancel', function(){ setTalk(false); });
+talkBtn.addEventListener('pointerleave', function(){ setTalk(false); });
+talkBtn.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+
+// WebRTC 能力检测
+var supported = !!(window.RTCPeerConnection && navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+if (!supported) $('noWebrtc').style.display = 'block';
+
+connect(); // 页面打开即连服务器，方便建房/加入
+})();
+</script>
+</body>
+</html>

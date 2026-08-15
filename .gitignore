@@ -1,0 +1,17 @@
+# Node
+node_modules/
+server.log
+users.json
+*.log
+
+# Android 构建产物
+android/app/build/
+android/build/
+android/.gradle/
+android/local.properties
+*.keystore
+*.jks
+
+# 系统
+.DS_Store
+Thumbs.db

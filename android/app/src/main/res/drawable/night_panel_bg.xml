@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 夜晚行动面板 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#F2141917" />
+    <stroke android:width="1dp" android:color="#3d7a6a58" />
+    <corners
+        android:topLeftRadius="4dp"
+        android:topRightRadius="28dp"
+        android:bottomLeftRadius="4dp"
+        android:bottomRightRadius="28dp" />
+</shape>

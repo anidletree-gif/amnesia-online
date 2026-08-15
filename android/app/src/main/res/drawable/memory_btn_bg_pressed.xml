@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 按钮按下态：圆角反转 16 2 16 2，颜色加深 -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <gradient
+        android:angle="270"
+        android:startColor="#1e1e19"
+        android:endColor="#141410"
+        android:type="linear" />
+    <stroke android:width="1dp" android:color="#8a7a68" />
+    <corners
+        android:topLeftRadius="16dp"
+        android:topRightRadius="2dp"
+        android:bottomLeftRadius="16dp"
+        android:bottomRightRadius="2dp" />
+</shape>

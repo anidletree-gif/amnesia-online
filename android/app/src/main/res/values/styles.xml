@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Amnesia" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@drawable/bg_root</item>
+        <item name="android:statusBarColor">@color/bg</item>
+        <item name="android:navigationBarColor">@color/bg</item>
+        <item name="android:colorAccent">@color/accent_gold</item>
+        <item name="android:colorPrimary">@color/bg</item>
+        <item name="android:colorPrimaryDark">@color/bg</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- 基础文本样式（Text.* 点号样式的隐式父样式） -->
+    <style name="Text" />
+
+    <!-- 标题：衬线字体（对应 Playfair Display） -->
+    <style name="Text.Title">
+        <item name="android:fontFamily">serif</item>
+        <item name="android:textColor">@color/text_primary</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:letterSpacing">0.08</item>
+    </style>
+
+    <!-- 正文：等宽字体（对应 Source Code Pro） -->
+    <style name="Text.Body">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/text_primary</item>
+    </style>
+
+    <style name="Text.BodySecondary">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/text_secondary</item>
+    </style>
+
+    <style name="Text.Gold">
+        <item name="android:fontFamily">monospace</item>
+        <item name="android:textColor">@color/accent_gold</item>
+        <item name="android:textStyle">bold</item>
+    </style>
+</resources>

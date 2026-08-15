@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 预设/阶段标签：bg-black/20 rounded-sm（对齐网页端 presetInfo） -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android">
+    <solid android:color="#33191918" />
+    <corners android:radius="4dp" />
+    <stroke android:width="1dp" android:color="#1f7a6a58" />
+</shape>

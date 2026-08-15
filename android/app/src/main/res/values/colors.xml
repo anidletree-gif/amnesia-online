@@ -1,0 +1,34 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 背景 -->
+    <color name="bg">#0c1210</color>
+    <!-- 主文本 -->
+    <color name="text_primary">#d4c9b8</color>
+    <color name="text_secondary">#a69b8a</color>
+    <color name="text_input">#e3dbcd</color>
+    <color name="text_chat">#c4b8a8</color>
+    <!-- 强调 -->
+    <color name="accent_gold">#b89a7a</color>
+    <color name="accent_blue">#8ECAE6</color>
+    <!-- 状态色 -->
+    <color name="error_red">#e06060</color>
+    <color name="success_green">#5f7e6b</color>
+    <color name="dead_red">#604040</color>
+    <color name="disconnect_orange">#a07030</color>
+    <!-- 卡片/按钮 -->
+    <color name="card_bg">#191E1C</color>
+    <color name="btn_top">#2a2a24</color>
+    <color name="btn_bottom">#1a1a16</color>
+    <color name="btn_border">#7a6a58</color>
+    <color name="btn_shadow">#0e0e0a</color>
+    <color name="input_bg">#121614</color>
+    <color name="border_dim">#7a6a58</color>
+    <color name="danger_top">#4a2a2a</color>
+    <color name="danger_bottom">#2e1a1a</color>
+    <color name="danger_text">#ecc0c0</color>
+    <color name="danger_border">#a06060</color>
+    <color name="player_badge_bg">#1e1c1a</color>
+    <color name="chat_bg">#0c0f0d</color>
+    <color name="overlay_bg">#0a0f0d</color>
+    <color name="night_panel_bg">#141917</color>
+</resources>
