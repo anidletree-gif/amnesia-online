@@ -6,20 +6,27 @@ const config = require('../config');
 
 const USERS_FILE = path.join(__dirname, '..', 'users.json');
 
-// 加载用户数据库
+// ★ 内存缓存：启动时读一次盘，之后所有读写走内存，避免每请求同步读盘（高并发瓶颈）
+let usersCache = null;
+
+// 加载用户数据库（首次调用读盘，之后返回内存缓存）
 function loadUsers() {
+    if (usersCache) return usersCache;
     try {
         if (fs.existsSync(USERS_FILE)) {
-            return JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+            usersCache = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+            return usersCache;
         }
     } catch(e) {
         console.error('加载用户数据失败:', e.message);
     }
-    return {};
+    usersCache = {};
+    return usersCache;
 }
 
-// 保存用户数据库
+// 保存用户数据库（同步更新缓存 + 落盘）
 function saveUsers(users) {
+    usersCache = users; // ★ 先更新缓存，保证内存与磁盘一致
     try {
         fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
     } catch(e) {

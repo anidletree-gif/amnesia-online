@@ -4,6 +4,10 @@ const game = require('../core/game');
 const connections = new Map();
 
 function handleWs(ws, req) {
+    // ★ 心跳标记：收到 pong 视为存活，超时未响应会被 server.js 强制断开
+    ws.isAlive = true;
+    ws.on('pong', () => { ws.isAlive = true; });
+
     const parsedUrl = url.parse(req.url, true);
     const playerId = parsedUrl.query.playerId || Math.random().toString(36).substring(2, 10);
 

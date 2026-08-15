@@ -9,6 +9,22 @@ const wss = new WebSocket.Server({ server });
 
 wss.on('connection', handleWs);
 
+// ★ 心跳保活：每30秒 ping 一次，连续2个周期无响应则强制断开
+//   防止断网/死机客户端占着连接不释放，避免连接数无限增长
+const HEARTBEAT_INTERVAL = 30000;
+const heartbeatTimer = setInterval(() => {
+    wss.clients.forEach(ws => {
+        if (ws.isAlive === false) {
+            ws.terminate();
+            return;
+        }
+        ws.isAlive = false;
+        try { ws.ping(); } catch (_) {}
+    });
+}, HEARTBEAT_INTERVAL);
+
+wss.on('close', () => clearInterval(heartbeatTimer));
+
 // ★ 支持环境变量覆盖端口（一键启动脚本 ./start.sh 8080 用）
 const PORT = process.env.PORT || config.PORT;
 
