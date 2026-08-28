@@ -102,8 +102,8 @@ function register(email, nickname, password, callback) {
 // 登录
 function login(email, password, callback) {
     const users = loadUsers();
-    const user = users[email];
 
+    const user = users[email];
     if (!user) return callback('邮箱未注册');
     if (!bcrypt.compareSync(password, user.password)) return callback('密码错误');
 
@@ -112,6 +112,11 @@ function login(email, password, callback) {
         nickname: user.nickname,
         avatar: user.avatar
     });
+}
+
+// 获取用户最新信息（邮箱精确匹配，主页头像用实时数据，避免 localStorage 缓存旧值）
+function getUser(email) {
+    return loadUsers()[email] || null;
 }
 
 // 更新头像
@@ -148,6 +153,7 @@ module.exports = {
     saveUsers,
     register,
     login,
+    getUser,
     updateAvatar,
     updateNickname,
     upload,

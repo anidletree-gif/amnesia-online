@@ -61,18 +61,108 @@
         } catch(e) { alert('网络错误，请重试'); }
     };
 }
-if (avatarImg) {
-        avatarImg.src = currentUser.avatar || '/avatars/default.png';
-        avatarImg.onerror = function() {
-            this.src = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 40 40%22%3E%3Ccircle cx=%2220%22 cy=%2220%22 r=%2220%22 fill=%22%234a3a2a%22/%3E%3Ctext x=%2220%22 y=%2226%22 text-anchor=%22middle%22 fill=%22%23d4c9b8%22 font-size=%2218%22%3E?%3C/text%3E%3C/svg%3E';
-        };
-    }
+// ★ 默认头像：干净的深色人物剪影（SVG data URI，不依赖任何图片文件）
+const DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='24' r='15' fill='%23b8a888'/%3E%3Cpath d='M6 62c0-15 11-22 26-22s26 7 26 22v2H6z' fill='%23b8a888'/%3E%3C/svg%3E";
 
-    // 创建右上角阶段指示器
+if (avatarImg) {
+    // ★ 主页头像：优先显示服务器实时头像，无头像时显示干净剪影（而不是丑圆圈）
+    avatarImg.src = currentUser.avatar || DEFAULT_AVATAR;
+    avatarImg.onerror = function() { this.src = DEFAULT_AVATAR; };
+    // 异步从服务器同步最新头像（用户上传后无需重登即可生效）
+    (async () => {
+        try {
+            const r = await fetch('/api/me?email=' + encodeURIComponent(currentUser.email));
+            if (r.ok) {
+                const fresh = await r.json();
+                if (fresh.avatar) {
+                    currentUser.avatar = fresh.avatar;
+                    localStorage.setItem('amnesia_user', JSON.stringify(currentUser));
+                    avatarImg.src = fresh.avatar;
+                }
+            }
+        } catch(e) {}
+    })();
+}
+
+    // 创建右上角阶段指示器（升级版：光点 + 进度条）
     const phaseIndicator = document.createElement('div');
     phaseIndicator.id = 'phaseIndicator';
-    phaseIndicator.style.cssText = 'position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.7);color:#d4c9b8;padding:6px 14px;border-radius:12px;font-size:14px;z-index:9999;';
+    phaseIndicator.style.cssText = 'position:fixed;top:10px;right:10px;background:rgba(0,0,0,0.7);color:#d4c9b8;padding:6px 14px;border-radius:12px;font-size:14px;z-index:9999;display:none;';
+    phaseIndicator.innerHTML = '<span class="phase-dot"></span><span id="phaseText">等待开始</span><span class="phase-bar"><i id="phaseBarFill"></i></span>';
     document.body.appendChild(phaseIndicator);
+
+    // ===== 氛围层 =====
+    const phaseOverlay = document.getElementById('phaseOverlay');
+    const phaseBanner = document.getElementById('phaseBanner');
+    let phaseBarTimer = null;
+    function setPhaseAtmosphere(newPhase, totalSeconds, label) {
+        if (phaseOverlay) phaseOverlay.className = '';
+        if (phaseIndicator) {
+            phaseIndicator.className = '';
+            const t = document.getElementById('phaseText');
+            if (t) t.textContent = label || '';
+        }
+        const valid = ['night', 'day', 'vote'];
+        if (valid.includes(newPhase)) {
+            if (phaseOverlay) phaseOverlay.classList.add(newPhase);
+            if (phaseIndicator) phaseIndicator.classList.add(newPhase);
+            // 阶段进度条
+            if (phaseBarTimer) { clearInterval(phaseBarTimer); phaseBarTimer = null; }
+            const fill = document.getElementById('phaseBarFill');
+            if (fill && totalSeconds > 0) {
+                let left = totalSeconds;
+                fill.style.width = '100%';
+                phaseBarTimer = setInterval(() => {
+                    left -= 1;
+                    if (fill) fill.style.width = Math.max(0, Math.min(100, (left / totalSeconds) * 100)) + '%';
+                    if (left <= 0 && phaseBarTimer) { clearInterval(phaseBarTimer); phaseBarTimer = null; }
+                }, 1000);
+            }
+        } else if (phaseBarTimer) { clearInterval(phaseBarTimer); phaseBarTimer = null; }
+    }
+    // 阶段切换：黑屏过场 + 大字横幅（单行不换行）
+    function showPhaseBanner(text, sub, color) {
+        // ★ 黑屏过场：先闪黑，再淡入显示横幅，再恢复
+        let flash = document.getElementById('fadeFlash');
+        if (!flash) { flash = document.createElement('div'); flash.id = 'fadeFlash'; flash.style.cssText = 'position:fixed;inset:0;z-index:90;background:#000;opacity:0;pointer-events:none;transition:opacity .8s ease'; document.body.appendChild(flash); }
+        flash.classList.add('on');
+        setTimeout(() => {
+            flash.classList.remove('on');
+            if (!phaseBanner) return;
+            phaseBanner.innerHTML = '';
+            const main = document.createElement('div');
+            main.textContent = text;
+            main.style.cssText = 'white-space:nowrap;';
+            if (color) main.style.color = color;
+            phaseBanner.appendChild(main);
+            if (sub) {
+                const s = document.createElement('div');
+                s.textContent = sub;
+                s.style.cssText = 'white-space:nowrap;';
+                s.className = 'sub';
+                phaseBanner.appendChild(s);
+            }
+            phaseBanner.classList.add('show');
+            clearTimeout(phaseBanner._t);
+            phaseBanner._t = setTimeout(() => phaseBanner.classList.remove('show'), 2200);
+        }, 400);
+    }
+    function setPhaseIndicator(label, phase, totalSeconds) {
+        setPhaseAtmosphere(phase, totalSeconds, label);
+        const t = document.getElementById('phaseText');
+        if (t) t.textContent = label;
+        // ★ 房间码旁阶段小徽章：🌙 第x夜 / ☀️ 第x天 / 🗳️ 投票
+        const badge = document.getElementById('phaseBadge');
+        if (badge) {
+            const m = label ? label.match(/第\s*(\d+)\s*[夜天]/) : null;
+            const dayNum = m ? m[1] : '';
+            badge.className = 'phase-badge';
+            if (phase === 'night') { badge.classList.add('night'); badge.textContent = `🌙 第${dayNum}夜`; }
+            else if (phase === 'day') { badge.classList.add('day'); badge.textContent = `☀️ 第${dayNum}天`; }
+            else if (phase === 'vote') { badge.classList.add('vote'); badge.textContent = '🗳️ 投票'; }
+            else { badge.style.display = 'none'; }
+        }
+    }
 
     // ========== 游戏状态 ==========
     let ws = null;
@@ -93,6 +183,7 @@ if (avatarImg) {
     let speakRemaining = 0;
     let canSpeak = false;
     let hasVoted = false;
+    let isMyActionTurn = false; // ★ 我的夜晚行动回合标记（用于内联行动按钮）
 
     // ========== 语音 ==========
     let audioContext = null;
@@ -513,8 +604,19 @@ if (avatarImg) {
     }
 
     function updatePlayerVolume(playerNumber, volume) {
-        const el = document.querySelector(`.player-volume-bar[data-number="${playerNumber}"]`);
+        const el = document.querySelector(`.pw-volume i[data-vol="${playerNumber}"]`);
         if (el) { el.style.width = (volume * 100) + '%'; el.style.opacity = volume > 0.05 ? 1 : 0; }
+        // 兼容旧版 class
+        const el2 = document.querySelector(`.player-volume-bar[data-number="${playerNumber}"]`);
+        if (el2) { el2.style.width = (volume * 100) + '%'; el2.style.opacity = volume > 0.05 ? 1 : 0; }
+    }
+    function setPlayerSpeaking(playerNumber, speaking) {
+        if (playerNumber == null) return;
+        const el = document.querySelector(`.pw-card[data-num="${playerNumber}"]`);
+        if (el) {
+            if (speaking) el.classList.add('speaking');
+            else el.classList.remove('speaking');
+        }
     }
 
     // ========== 按钮逻辑 ==========
@@ -586,6 +688,9 @@ ws.onclose = () => {
                     isSpeaking = false; speakingLock = false;
                     if (speakInterval) { clearInterval(speakInterval); speakInterval = null; }
                     destroyRecorder();
+                    // ★ 重置行动回合标记：只有夜晚+本人回合+存活 才允许点卡片行动
+                    isMyActionTurn = (msg.phase === 'night' && !!msg.isMyTurn && msg.alive !== false);
+                    document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
                     phase = msg.phase; currentDay = msg.day || 0; myNumber = msg.myNumber;
                     isHost = !!msg.isHost; isDead = !msg.alive; flipCards = msg.flipCards || [];
                     canSpeak = false; currentSpeaker = msg.currentSpeaker || null;
@@ -610,7 +715,7 @@ ws.onclose = () => {
                             safeDisplay(actionCard, 'none');
                             enableChat(true);
                             updateStartButton();
-                            phaseIndicator.textContent = '等待开始';
+                            setPhaseIndicator('等待开始', '', 0);
                             break;
                         case 'night':
                             safeSetText(statusArea, `🌙 第${currentDay}夜`);
@@ -618,7 +723,8 @@ ws.onclose = () => {
                             else { safeDisplay(actionCard, 'block'); if(actionCard) actionCard.innerHTML = '<p class="text-center py-8">夜幕降临…等待他人行动</p>'; }
                             enableChat(false);
                             safeDisplay(startBtn, 'none');
-                            phaseIndicator.textContent = `🌙 第${currentDay}夜`;
+                            setPhaseIndicator(`🌙 第${currentDay}夜`, 'night', msg.actionRemaining || 30);
+                            showPhaseBanner('🌙 夜幕降临', `第 ${currentDay} 夜`, '#8fb0ff');
                             break;
                         case 'day':
                             safeSetText(statusArea, `☀️ 第${currentDay}天`);
@@ -633,21 +739,24 @@ ws.onclose = () => {
                                 enableChat(false);
                             }
                             safeDisplay(startBtn, 'none');
-                            phaseIndicator.textContent = `☀️ 第${currentDay}天`;
+                            const daySpeakRemaining = msg.currentSpeaker ? (msg.speakRemaining || 120) : 120;
+                            setPhaseIndicator(`☀️ 第${currentDay}天`, 'day', daySpeakRemaining);
+                            showPhaseBanner('☀️ 黎明破晓', `第 ${currentDay} 天`, '#e8c46a');
                             break;
                         case 'vote':
                             safeSetText(statusArea, '🗳️ 投票阶段');
                             showVoteOptions();
                             enableChat(false);
                             safeDisplay(startBtn, 'none');
-                            phaseIndicator.textContent = '🗳️ 投票阶段';
+                            setPhaseIndicator('🗳️ 投票阶段', 'vote', msg.voteRemaining || 30);
+                            showPhaseBanner('🗳️ 投票时刻', '选择你的立场', '#e86a5a');
                             break;
                         case 'gameover':
                             safeSetText(statusArea, '游戏结束');
                             safeDisplay(actionCard, 'none');
                             enableChat(true);
                             safeDisplay(startBtn, 'none');
-                            phaseIndicator.textContent = '游戏结束';
+                            setPhaseIndicator('游戏结束', '', 0);
                             break;
                     }
                     return;
@@ -657,7 +766,7 @@ ws.onclose = () => {
                     safeSetText(roomCodeSpan, roomId); safeSetText(presetInfo, '档案: ' + msg.preset);
                     safeDisplay(loginPanel, 'none'); safeDisplay(gamePanel, 'block'); safeDisplay(gameCornerButtons, 'flex');
                     enableChat(true); safeDisplay(startBtn, 'none'); safeDisplay(actionCard, 'none');
-                    phaseIndicator.textContent = '观战中';
+                    setPhaseIndicator('观战中', '', 0);
                     return;
                 }
                 if (msg.type === 'room_created') {
@@ -666,14 +775,14 @@ ws.onclose = () => {
                     safeSetText(roomCodeSpan, roomId); safeSetText(presetInfo, '档案: ' + msg.preset);
                     safeDisplay(loginPanel, 'none'); safeDisplay(gamePanel, 'block'); safeDisplay(gameCornerButtons, 'flex');
                     enableChat(true); updateStartButton();
-                    phaseIndicator.textContent = '等待开始';
+                    setPhaseIndicator('等待开始', '', 0);
                 } else if (msg.type === 'joined') {
       roomId = msg.roomId; myNumber = msg.yourNumber; isHost = !!msg.isHost;
       flipCards = msg.flipCards || [];
       safeSetText(roomCodeSpan, roomId); safeSetText(presetInfo, '档案: ' + msg.preset);
       safeDisplay(loginPanel, 'none'); safeDisplay(gamePanel, 'block'); safeDisplay(gameCornerButtons, 'flex');
       enableChat(true); updateStartButton();
-      phaseIndicator.textContent = '等待开始';
+      setPhaseIndicator('等待开始', '', 0);
       // ★ WebRTC：加入后同步 P2P 连接（player_list 可能先于 joined 到达导致此前 reconcile 被 myNumber 门控跳过）
       reconcilePeers();
     } else if (msg.type === 'player_list') {
@@ -689,19 +798,30 @@ ws.onclose = () => {
                 } else if (msg.type === 'phase') {
                     phase = msg.phase; currentDay = msg.day;
                     if (msg.phase !== 'vote') hasVoted = false;
+                    // ★ 非夜晚阶段强制关闭行动模式
+                    if (msg.phase !== 'night') {
+                        isMyActionTurn = false;
+                        document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                        const flipOv = document.getElementById('flipTableOverlay');
+                        if (flipOv) flipOv.remove();
+                        // ★ 重建玩家列表 DOM：彻底清掉夜晚绑定的卡片点击监听（白天不可再行动）
+                        renderPlayerList();
+                    }
                     if (msg.phase === 'waiting') {
                         safeSetText(statusArea, '等待开始'); safeDisplay(actionCard, 'none'); enableChat(true); updateStartButton();
-                        phaseIndicator.textContent = '等待开始';
+                        setPhaseIndicator('等待开始', '', 0);
                     } else if (msg.phase === 'night') {
                         safeSetText(statusArea, `🌙 第${msg.day}夜`);
                         safeDisplay(actionCard, 'block'); actionCard.innerHTML = '<p class="text-center py-8">夜幕降临…</p>';
                         enableChat(false); destroyRecorder();
-                        phaseIndicator.textContent = `🌙 第${msg.day}夜`;
+                        setPhaseIndicator(`🌙 第${msg.day}夜`, 'night', msg.actionRemaining || 30);
+                        showPhaseBanner('🌙 夜幕降临', `第 ${msg.day} 夜`, '#8fb0ff');
                     } else if (msg.phase === 'day') {
                         safeSetText(statusArea, `☀️ 第${msg.day}天`);
                         enableChat(false); destroyRecorder();
                         if(msg.killedNames) addChatLog('🌅 死者: '+msg.killedNames);
-                        phaseIndicator.textContent = `☀️ 第${msg.day}天`;
+                        setPhaseIndicator(`☀️ 第${msg.day}天`, 'day', msg.speakRemaining || 120);
+                        showPhaseBanner('☀️ 黎明破晓', `第 ${msg.day} 天`, '#e8c46a');
                         // ★ 修复：直接使用附带发言人信息启动发言
                         if (msg.currentSpeaker) {
                             currentSpeaker = msg.currentSpeaker;
@@ -714,7 +834,8 @@ ws.onclose = () => {
                         }
                     } else if (msg.phase === 'vote') {
                         safeSetText(statusArea, '🗳️ 投票阶段'); showVoteOptions(); enableChat(false); safeDisplay(startBtn, 'none');
-                        phaseIndicator.textContent = '🗳️ 投票阶段';
+                        setPhaseIndicator('🗳️ 投票阶段', 'vote', msg.voteRemaining || 30);
+                        showPhaseBanner('🗳️ 投票时刻', '选择你的立场', '#e86a5a');
                     }
                 } else if (msg.type === 'your_turn') {
                     if (!isSpectator) { safeSetText(statusArea, '🌙 你的回合 · 请行动'); showNightActions(); }
@@ -737,6 +858,7 @@ ws.onclose = () => {
                     showSpeakUI(msg.speaker, canSpeak);
                 } else if (msg.type === 'speak_end') {
                     stopSpeakCountdown(); currentSpeaker = null; enableChat(false); destroyRecorder();
+                    setPlayerSpeaking(null, false); document.querySelectorAll('.pw-card').forEach(c => c.classList.remove('speaking'));
                     if(!isSpectator && actionCard) actionCard.innerHTML = '<p class="text-center py-4">发言结束，准备投票</p>';
                 } else if (msg.type === 'vote_start') {
                     phase = 'vote'; hasVoted = false; showVoteOptions();
@@ -749,6 +871,8 @@ ws.onclose = () => {
                     }
                     addChatLog(voteInfo);
                     if (msg.name) addChatLog(`⚖️ ${msg.name} 被处决`);
+                    // ★ 3D 结算：被处决者号码牌被清下桌 + 结果横幅
+                    showVoteResult(msg.name, msg.tally, msg.number);
                 } else if (msg.type === 'no_execution') {
                     let voteInfo = '投票结果：';
                     if (msg.tally) {
@@ -758,6 +882,8 @@ ws.onclose = () => {
                     }
                     addChatLog(voteInfo);
                     addChatLog('⚖️ 今日无人被处决');
+                    // ★ 平票结果横幅
+                    showVoteResult(null, msg.tally, null);
                 } else if (msg.type === 'gameover') {
                     phase = 'gameover'; stopSpeakCountdown(); safeDisplay(startBtn, 'none'); enableChat(true); destroyRecorder();
                     phaseIndicator.textContent = '游戏结束';
@@ -785,6 +911,9 @@ ws.onclose = () => {
     function showSpeakUI(speakerNumber, isMyTurn) {
         const name = players.find(p => p.number === speakerNumber)?.name || speakerNumber + '号';
         safeSetText(statusArea, `🎤 发言: ${name} (${speakRemaining}s)`);
+        // ★ 狼人杀式：高亮当前发言人
+        document.querySelectorAll('.pw-card').forEach(c => c.classList.remove('speaking'));
+        setPlayerSpeaking(speakerNumber, true);
         if (!isSpectator && actionCard) {
             let html = `<div class="text-center py-4"><p>轮到 ${name} 发言</p><div id="speakTimer" class="text-2xl font-bold my-2">${speakRemaining}秒</div>`;
             if (isMyTurn) {
@@ -838,90 +967,309 @@ ws.onclose = () => {
     function renderPlayerList() {
         if (!playerListDiv) return;
         const list = Array.isArray(players) ? players : [];
-        let h = '';
-        list.forEach(p => {
-            const avatarUrl = p.avatar || '/avatars/default.png';
+        // ★ 固定座位：按编号 1-3 左列 / 4-6 右列，死亡不移位（只变灰）
+        const left = [], right = [];
+        list.slice().sort((a,b) => a.number - b.number).forEach(p => {
+            (p.number <= Math.ceil(list.length / 2) ? left : right).push(p);
+        });
+        // 若单列不满则从另一列借位，保持两列均衡
+        if (left.length > right.length + 1) right.unshift(left.pop());
+        if (right.length > left.length + 1) left.push(right.shift());
+        function cardHtml(p) {
+            // ★ 头像：优先用户上传的真头像，无头像时显示干净人物剪影（绝不再用丑圆圈）
+            const avatarUrl = p.avatar || DEFAULT_AVATAR;
             const isMe = p.number === myNumber;
             const showDisconnected = !p.connected && !isMe;
-            h += `<div class="player-badge ${p.alive ? '' : 'dead'} ${showDisconnected ? 'disconnected' : ''}">`;
-            if (isHost && phase === 'waiting' && p.number !== myNumber) h += `<button class="kick-btn" onclick="kickPlayer(${p.number})">✕</button>`;
-            h += `<div style="display:flex;align-items:center;justify-content:center;gap:4px;">
-                <img src="${avatarUrl}" class="player-avatar" onerror="this.style.display='none'">
-                <span>${p.number}号 ${p.name}${p.isHost ? ' 👑' : ''}</span>
+            const kickBtn = (isHost && phase === 'waiting' && p.number !== myNumber) ? `<button class="pw-kick" onclick="kickPlayer(${p.number})">✕</button>` : '';
+            const crown = p.isHost ? '<span class="crown">👑</span>' : '';
+            const statusCls = p.alive ? (showDisconnected ? 'off' : 'alive') : 'dead';
+            const statusTxt = p.alive ? (showDisconnected ? '离线' : '在场') : '已死亡';
+            const deadX = p.alive ? '' : '<span class="pw-dead-x">☠</span>';
+            return `<div class="pw-card ${p.alive ? '' : 'dead'} ${showDisconnected ? 'disconnected' : ''}" data-num="${p.number}">
+                ${kickBtn}${deadX}
+                <img src="${avatarUrl}" class="pw-avatar" onerror="this.src='${DEFAULT_AVATAR}'">
+                <div class="pw-info">
+                    <div class="pw-name"><span class="num">${p.number}号</span><span class="nm">${p.name}</span>${crown}${isMe ? '<span class="me-tag">我</span>' : ''}</div>
+                    <div class="pw-status"><span class="dot ${statusCls}"></span>${statusTxt}</div>
+                </div>
+                <div class="pw-volume"><i data-vol="${p.number}"></i></div>
             </div>`;
-            h += `<div class="player-volume-bar" data-number="${p.number}" style="height:4px;background:#4caf50;width:0%;margin:2px 0;transition: width 0.1s;opacity:0;"></div>`;
-            h += `<div style="font-size:10px;color:#a69b8a;">${p.alive ? '⚡' : '☠'} ${showDisconnected ? '离线' : ''}</div>`;
-            h += `</div>`;
-        });
-        playerListDiv.innerHTML = h;
+        }
+        playerListDiv.innerHTML = `<div id="playerListCol">${left.map(cardHtml).join('')}</div><div id="playerListCol">${right.map(cardHtml).join('')}</div>`;
+        // ★ 我的回合时，给存活目标卡片挂上"点击展开行动"事件（bindNightTargetClicks 内部有守卫）
+        bindNightTargetClicks();
     }
 
     // ========== 夜晚行动 / 投票 UI ==========
     function showNightActions() {
-        if (overlayDiv) overlayDiv.remove();
-        overlayDiv = document.createElement('div');
-        overlayDiv.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.5);z-index:10000;display:flex;align-items:center;justify-content:center;';
-        const cont = document.createElement('div');
-        cont.style.cssText = 'max-width:500px;width:90%;background:rgba(20,25,23,0.95);backdrop-filter:blur(12px);border:1px solid rgba(180,150,120,0.3);border-radius:8px 32px 8px 32px;padding:24px;color:#d4c9b8;max-height:90vh;overflow-y:auto;';
-        let html = `<h2 class="text-3xl font-serif text-center mb-6">⚡ 你的回合</h2>
-        <div class="grid grid-cols-2 gap-6 mb-8">
-            <div id="actKill" class="memory-card flex flex-col items-center justify-center py-6 cursor-pointer"><span class="text-5xl mb-2">🗡️</span>暗杀</div>
-            <div id="actCheck" class="memory-card flex flex-col items-center justify-center py-6 cursor-pointer"><span class="text-5xl mb-2">🔍</span>查验</div>
-        </div>
-        <div id="targetArea" style="display:none;"><p class="mb-3 text-lg">👉 选择目标</p><div id="targetList" class="grid grid-cols-2 gap-3 mb-6"></div></div>
-        <p class="mb-3 text-lg">🃏 翻牌（必选）</p><div id="flipList" class="flex flex-wrap gap-4 justify-center mb-8"></div>
-        <button id="submitBtn" class="memory-btn py-4 text-xl" disabled>提交</button>`;
-        cont.innerHTML = html;
-        overlayDiv.appendChild(cont);
-        document.body.appendChild(overlayDiv);
-
-        const killBtn = cont.querySelector('#actKill');
-        const checkBtn = cont.querySelector('#actCheck');
-        const targetArea = cont.querySelector('#targetArea');
-        const targetList = cont.querySelector('#targetList');
-        const flipList = cont.querySelector('#flipList');
-        const submitBtn = cont.querySelector('#submitBtn');
-
-        let selAct = null, selTarget = null, selFlip = undefined;
-        function upd() { if (submitBtn) submitBtn.disabled = !selAct || selTarget === null || selFlip === undefined; }
-
-        const alive = players.filter(p => p.alive && p.number !== myNumber);
-        if (targetList) { alive.forEach(p => { const b = document.createElement('div'); b.className = 'player-badge cursor-pointer'; b.textContent = `${p.number}号 ${p.name}`; b.onclick = () => { targetList.querySelectorAll('.player-badge').forEach(x => x.style.background = ''); b.style.background = '#5f7e6b'; selTarget = p.number; upd(); }; targetList.appendChild(b); }); }
-
-        if (flipList) {
-            flipCards.forEach(c => {
-                if (!c || !c.role) return;
-                const roleName = c.name ? c.name.replace('牌', '') : '';
-                const imgUrl = roleImages[roleName];
-                const card = document.createElement('div');
-                card.className = 'flip-card';
-                card.style.cssText = 'background:rgba(30,28,26,0.8);border:1px dashed rgba(150,120,90,0.3);border-radius:8px;padding:8px;text-align:center;cursor:pointer;width:70px;height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;';
-                if (imgUrl) { card.innerHTML = `<img src="${imgUrl}" style="width:100%;height:70%;object-fit:contain;border-radius:4px;">`; const nameSpan = document.createElement('div'); nameSpan.textContent = c.name; nameSpan.style.fontSize = '10px'; card.appendChild(nameSpan); }
-                else { const iconMap = { '凶手牌':'🗡️', '虚构者牌':'🎭', '侦探牌':'🔍', '错构者牌':'🧩', '精神病牌':'🎪', '人格分裂牌':'👥' }; card.innerHTML = `<div class="text-2xl mb-1">${iconMap[c.role] || '🃏'}</div><div style="font-size:10px;">${c.name}</div>`; }
-                card.onclick = () => { flipList.querySelectorAll('.flip-card').forEach(x => { x.classList.remove('selected'); x.style.border = '1px dashed rgba(150,120,90,0.3)'; }); card.classList.add('selected'); card.style.border = '2px solid #b89a7a'; selFlip = c.role; upd(); };
-                flipList.appendChild(card);
-            });
-            const none = document.createElement('div'); none.className = 'flip-card'; none.style.cssText = 'background:rgba(30,28,26,0.8);border:1px dashed rgba(150,120,90,0.3);border-radius:8px;padding:8px;text-align:center;cursor:pointer;width:70px;height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;';
-            none.innerHTML = '<div class="text-2xl mb-1">🚫</div><div style="font-size:10px;">不翻牌</div>';
-            none.onclick = () => { flipList.querySelectorAll('.flip-card').forEach(x => { x.classList.remove('selected'); x.style.border = '1px dashed rgba(150,120,90,0.3)'; }); none.classList.add('selected'); none.style.border = '2px solid #b89a7a'; selFlip = null; upd(); };
-            flipList.appendChild(none);
-        }
-
-        killBtn?.addEventListener('click', () => { selAct = 'kill'; targetArea.style.display = 'block'; killBtn.classList.add('selected'); checkBtn.classList.remove('selected'); upd(); });
-        checkBtn?.addEventListener('click', () => { selAct = 'check'; targetArea.style.display = 'block'; checkBtn.classList.add('selected'); killBtn.classList.remove('selected'); upd(); });
-        submitBtn?.addEventListener('click', () => { if (selAct && selTarget !== null && selFlip !== undefined) { if (ws) ws.send(JSON.stringify({ type: 'night_action', action: selAct, target: selTarget, flipCard: selFlip })); overlayDiv.remove(); overlayDiv = null; if (actionCard) actionCard.innerHTML = '<p class="text-center py-8 text-xl">✅ 已提交</p>'; } });
+        // ★ 内联交互：不弹大容器，直接让玩家列表卡片可点击展开行动
+        if (overlayDiv) { overlayDiv.remove(); overlayDiv = null; }
+        isMyActionTurn = true;
+        if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-[#b89a7a]">🌙 点击下方玩家卡片选择行动目标</p>';
+        renderPlayerList();
     }
 
+    // ★ 点击玩家卡片 -> 卡片下方内联展开 [暗杀/查验] -> 选动作 -> 展开翻牌 -> 提交
+    function bindNightTargetClicks() {
+        if (!playerListDiv) return;
+        // ★ 守卫：只有夜晚 + 我的回合 + 我还活着 才允许点卡片行动；否则清除所有展开区并返回
+        if (phase !== 'night' || !isMyActionTurn || isDead || isSpectator) {
+            isMyActionTurn = false;
+            document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+            return;
+        }
+        const alive = players.filter(p => p.alive && p.number !== myNumber);
+        const myCard = document.querySelector(`.pw-card[data-num="${myNumber}"]`);
+        if (myCard) {
+            myCard.style.borderColor = 'rgba(95,174,120,.7)';
+            myCard.style.boxShadow = '0 0 12px rgba(95,174,120,.3)';
+        }
+        document.querySelectorAll('.pw-card').forEach(card => {
+            const num = parseInt(card.dataset.num);
+            if (!num || num === myNumber) return;
+            const isAliveTarget = alive.some(p => p.number === num);
+            // 清除旧展开区
+            const oldArea = card.parentElement.querySelector('.pw-action-area');
+            if (oldArea) oldArea.remove();
+            if (!isAliveTarget) { card.style.cursor = 'default'; return; }
+            card.style.cursor = 'pointer';
+            // 卡片上已有展开区时点击收起
+            card.onclick = null;
+            card.addEventListener('click', function handler(ev) {
+                ev.stopPropagation();
+                // ★★ 实时守卫：只有 夜晚+我的回合+我活着+未观战 才允许行动；否则立刻中止
+                if (phase !== 'night' || !isMyActionTurn || isDead || isSpectator) {
+                    document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                    // 恢复 actionCard：如果被行动残留覆盖且当前是白天发言，由 speak_start 重新渲染
+                    return;
+                }
+                // 已选中样式
+                document.querySelectorAll('.pw-card').forEach(c => { if (c !== card) { c.style.borderColor = ''; c.style.boxShadow = ''; } });
+                card.style.borderColor = '#e8c46a';
+                card.style.boxShadow = '0 0 14px rgba(232,196,106,.5)';
+                // 移除其他卡片展开区
+                document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                const col = card.parentElement; // playerListCol
+                // 已存在则收起
+                let area = col.querySelector('.pw-action-area');
+                if (area) { area.remove(); return; }
+                area = document.createElement('div');
+                area.className = 'pw-action-area';
+                area.innerHTML = `
+                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                        <button class="pw-act-btn" data-act="kill">🗡️ 暗杀</button>
+                        <button class="pw-act-btn" data-act="check">🔍 查验</button>
+                    </div>
+                    <div class="pw-flip-row" style="display:none;margin-top:8px;flex-wrap:wrap;gap:4px;"></div>
+                    <div class="pw-submit-row" style="display:none;margin-top:8px;">
+                        <button class="pw-submit-btn" style="width:100%;padding:6px;background:linear-gradient(145deg,#2a3a2e,#1a2a1e);border:1px solid #5fae78;color:#cfe8d4;border-radius:6px;font-size:12px;cursor:pointer;">✅ 确认行动</button>
+                    </div>`;
+                col.insertBefore(area, card.nextSibling);
+                // 动作按钮
+                let selAct = null, selFlip = null;
+                const actBtns = area.querySelectorAll('.pw-act-btn');
+                const flipRow = area.querySelector('.pw-flip-row');
+                const submitRow = area.querySelector('.pw-submit-row');
+                actBtns.forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        e.stopPropagation();
+                        selAct = btn.dataset.act;
+                        actBtns.forEach(b => { b.style.borderColor = ''; b.style.background = ''; });
+                        btn.style.borderColor = '#e8c46a';
+                        btn.style.background = 'rgba(232,196,106,.15)';
+                        // ★ 3D 行动桌：弹出桌面 + 卡牌飞入，选择翻牌/不翻
+                        openFlipTable(num, selAct, area);
+                    });
+                });
+                // 提交
+                const submitBtn = area.querySelector('.pw-submit-btn');
+                submitBtn.addEventListener('click', (ev) => {
+                    ev.stopPropagation();
+                    if (selAct && selFlip !== undefined) {
+                        if (ws) ws.send(JSON.stringify({ type: 'night_action', action: selAct, target: num, flipCard: selFlip }));
+                        area.innerHTML = '<p style="text-align:center;padding:6px;color:#8fae98;font-size:12px;">✅ 已行动</p>';
+                        isMyActionTurn = false;
+                        document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                        if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已提交行动</p>';
+                    }
+                });
+            });
+        });
+    }
+
+    // ========== 头像上传（补全：之前前端缺 uploadAvatar 函数，点选头像根本不上传） ==========
+    window.uploadAvatar = function(e) {
+        const file = e && e.target && e.target.files && e.target.files[0];
+        if (!file) return;
+        if (!/^image\/(png|jpeg|jpg|gif|webp)$/.test(file.type)) {
+            alert('请选择图片文件（PNG/JPG/GIF/WEBP）');
+            return;
+        }
+        if (file.size > 2 * 1024 * 1024) {
+            alert('图片不能超过 2MB');
+            return;
+        }
+        const fd = new FormData();
+        fd.append('avatar', file);
+        fd.append('email', currentUser.email);
+        const btn = e.target;
+        fetch('/api/upload-avatar', { method: 'POST', body: fd })
+            .then(r => r.json())
+            .then(data => {
+                if (data && data.avatar) {
+                    // 更新 localStorage + 顶部头像立即刷新
+                    currentUser.avatar = data.avatar;
+                    localStorage.setItem('amnesia_user', JSON.stringify(currentUser));
+                    const img = getEl('avatarImg');
+                    if (img) img.src = data.avatar;
+                    alert('✅ 头像已更新');
+                } else {
+                    alert('上传失败：' + (data.error || '未知错误'));
+                }
+            })
+            .catch(err => { alert('网络错误：' + err.message); });
+        // 清空 input，允许重复选择同一文件
+        if (btn) btn.value = '';
+    };
+
+    // ★★★ 3D 行动桌：点击暗杀/查验后弹出，卡牌从桌底飞入（背面朝上），点击翻牌显示角色图，选中后确认
+    function openFlipTable(targetNumber, actionType, sourceArea) {
+        const targetName = players.find(p => p.number === targetNumber)?.name || (targetNumber + '号');
+        const actionName = actionType === 'kill' ? '🗡️ 暗杀' : '🔍 查验';
+        // 关闭旧弹层
+        const oldOv = document.getElementById('flipTableOverlay');
+        if (oldOv) oldOv.remove();
+
+        const overlay = document.createElement('div');
+        overlay.id = 'flipTableOverlay';
+        overlay.className = '';
+        let cardsHtml = '';
+        const cards = [{ role: null, name: '不翻牌', icon: '🚫' }].concat(
+            flipCards.filter(c => c && c.role).map(c => ({ role: c.role, name: c.name || c.role + '牌', icon: '🃏' }))
+        );
+        const fanBase = cards.length > 1 ? (cards.length - 1) * -4 : 0; // 扇形展开
+        cards.forEach((c, i) => {
+            const imgUrl = c.role ? roleImages[c.name.replace('牌','')] : null;
+            cardsHtml += `
+            <div class="ft-card" data-idx="${i}" data-role="${c.role || ''}" style="--fan:${fanBase + i * 8}deg">
+                <div class="ft-inner">
+                    <div class="ft-face ft-back">
+                        <div class="ft-back-pattern">${c.role ? '◈' : '✕'}</div>
+                        <div class="ft-sub">点击翻开</div>
+                    </div>
+                    <div class="ft-face ft-front" style="background:linear-gradient(155deg,#3b3226,#221b12);gap:8px;">
+                        ${imgUrl ? `<img src="${imgUrl}" style="width:74px;height:74px;object-fit:contain;border-radius:6px;">` : `<div style="font-size:40px;line-height:1;">${c.icon}</div>`}
+                        <div class="ft-name">${c.name}</div>
+                        <div class="ft-sub">${c.role ? '翻此牌' : '不冒险'}</div>
+                    </div>
+                </div>
+            </div>`;
+        });
+        overlay.innerHTML = `
+            <button class="ft-cancel">✕</button>
+            <div class="ft-desc">${actionName} → 目标 ${targetName} · 选择是否翻开一张牌</div>
+            <div class="flip-table">
+                <div class="ft-cards">${cardsHtml}</div>
+            </div>
+            <button class="ft-confirm">✅ 确认行动</button>`;
+        document.body.appendChild(overlay);
+        // 触发入场动画
+        requestAnimationFrame(() => requestAnimationFrame(() => overlay.classList.add('show')));
+
+        let selected = null; // { role: null-不翻 | 角色名 }
+        let selectedCard = null;
+        const ftCards = overlay.querySelectorAll('.ft-card');
+        ftCards.forEach(card => {
+            card.addEventListener('click', () => {
+                // ★ 点已选中的卡 = 撤回：翻回背面、取消选中
+                if (card === selectedCard) {
+                    card.classList.remove('flipped', 'up');
+                    selectedCard = null;
+                    selected = null;
+                    const btn = overlay.querySelector('.ft-confirm');
+                    if (btn) btn.classList.remove('show');
+                    return;
+                }
+                // ★ 互斥：其他所有卡收起翻转 + 取消选中
+                ftCards.forEach(c => c.classList.remove('flipped', 'up'));
+                // 翻牌动画 + 选中态
+                card.classList.add('flipped', 'up');
+                selectedCard = card;
+                selected = card.dataset.role === '' ? null : card.dataset.role;
+                const btn = overlay.querySelector('.ft-confirm');
+                if (btn) btn.classList.add('show');
+            });
+        });
+        overlay.querySelector('.ft-cancel').addEventListener('click', () => {
+            overlay.remove();
+        });
+        overlay.querySelector('.ft-confirm').addEventListener('click', () => {
+            // 未选任何牌时默认不翻
+            const finalFlip = (selected === undefined) ? null : selected;
+            overlay.remove();
+            if (sourceArea) sourceArea.innerHTML = '<p style="text-align:center;padding:6px;color:#8fae98;font-size:12px;">✅ 已行动</p>';
+            if (ws) ws.send(JSON.stringify({ type: 'night_action', action: actionType, target: targetNumber, flipCard: finalFlip }));
+            isMyActionTurn = false;
+            document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+            if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已提交行动</p>';
+        });
+    }
+
+    // ===== 3D 投票桌（three.js 俯视木桌 + 环绕号码牌立牌） =====
     function showVoteOptions() {
-        if (!actionCard || hasVoted) return;
-        const alive = players.filter(p => p.alive);
-        let h = `<h3 class="text-lg font-serif mb-4">🗳️ 投票处决</h3><div class="grid grid-cols-2 gap-3">`;
-        alive.forEach(p => h += `<div class="player-badge cursor-pointer" data-vote="${p.number}">${p.number}号 ${p.name}</div>`);
-        h += `<div class="player-badge cursor-pointer" data-vote="-1" style="background:#3a2a2a;">🚫 弃权</div></div>`;
-        actionCard.innerHTML = h;
-        document.querySelectorAll('[data-vote]').forEach(b => b.addEventListener('click', () => {
-            if (ws && !hasVoted) { ws.send(JSON.stringify({ type: 'vote', target: parseInt(b.dataset.vote) })); actionCard.innerHTML = '<p class="text-center py-8">已投票</p>'; hasVoted = true; }
-        }));
+        if (hasVoted) return;
+        // 关闭 CSS 伪 3D 桌（如果残留）
+        const oldOv = document.getElementById('voteTableOverlay');
+        if (oldOv) oldOv.remove();
+        const oldFlip = document.getElementById('flipTableOverlay');
+        if (oldFlip) oldFlip.remove();
+
+        // ★ 使用 three.js 真 3D 投票桌
+        if (window.Vote3D) {
+            const alive = players.filter(p => p.alive && p.number !== myNumber);
+            Vote3D.open(alive, (targetNumber) => {
+                hasVoted = true;
+                if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已投票，等待其他玩家…</p>';
+                if (ws) ws.send(JSON.stringify({ type: 'vote', target: targetNumber }));
+            });
+            return;
+        }
+
+        // 降级：无 three.js 时用简单列表
+        const alive = players.filter(p => p.alive && p.number !== myNumber);
+        if (actionCard) {
+            let h = `<h3 class="text-lg font-serif mb-4">🗳️ 投票处决</h3><div class="grid grid-cols-2 gap-3">`;
+            alive.forEach(p => h += `<div class="player-badge cursor-pointer" data-vote="${p.number}">${p.number}号 ${p.name}</div>`);
+            h += `<div class="player-badge cursor-pointer" data-vote="-1">🚫 弃权</div></div>`;
+            actionCard.innerHTML = h;
+            document.querySelectorAll('[data-vote]').forEach(b => b.addEventListener('click', () => {
+                if (ws && !hasVoted) { ws.send(JSON.stringify({ type: 'vote', target: parseInt(b.dataset.vote) })); actionCard.innerHTML = '<p class="text-center py-8">已投票</p>'; hasVoted = true; }
+            }));
+        }
+    }
+
+    // 更新 3D 投票桌：标记已投票的人（绿色光边）
+    function updateVotePlaques(votedNumbers) {
+        if (window.Vote3D) Vote3D.markVoted(votedNumbers || []);
+    }
+
+    // 投票结果：three.js 场景里被处决者号码牌被"清下桌" 3D 动画 + 结果横幅
+    function showVoteResult(executedName, tally, executedNumber) {
+        if (window.Vote3D) {
+            Vote3D.reveal(executedNumber, executedName, tally);
+            return;
+        }
+        // 降级：简单结果横幅
+        let tallyTxt = '';
+        if (tally) { for (let [num, cnt] of Object.entries(tally)) tallyTxt += `${num}号 ${cnt}票 · `; }
+        const res = document.createElement('div');
+        res.className = 'vt-result';
+        res.innerHTML = executedName
+            ? `<div class="vr-main">⚖️ ${executedName} 被处决</div><div class="vr-tally">${tallyTxt}</div>`
+            : `<div class="vr-main" style="color:#c08070;">平票 · 无人被处决</div><div class="vr-tally">${tallyTxt}</div>`;
+        document.body.appendChild(res);
+        requestAnimationFrame(() => res.classList.add('show'));
+        setTimeout(() => { res.classList.remove('show'); setTimeout(() => res.remove(), 500); }, 2400);
     }
 
     // ========== UI 函数 ==========

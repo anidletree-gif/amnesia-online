@@ -2,7 +2,7 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const config = require('../config');
-const { register, login, updateAvatar, updateNickname, isAllowedEmail, upload } = require('../core/auth');
+const { register, login, updateAvatar, updateNickname, isAllowedEmail, getUser, upload } = require('../core/auth');
 const { sendVerificationCode, verifyCode } = require('../mailer');
 // ★ presets.json 缺失兜底，避免启动崩溃
 let presetsData = {};
@@ -177,6 +177,25 @@ function handleHttp(req, res) {
                 res.end(JSON.stringify({ error: e.message }));
             }
         });
+        return;
+    }
+
+    // 获取用户最新信息（主页头像同步，避免 localStorage 缓存旧头像）
+    if (pathname === '/api/me' && req.method === 'GET') {
+        try {
+            const email = new URL(req.url, 'http://x').searchParams.get('email') || '';
+            const u = getUser(email);
+            if (u) {
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ email: u.email, nickname: u.nickname, avatar: u.avatar }));
+            } else {
+                res.writeHead(404, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify({ error: '用户不存在' }));
+            }
+        } catch(e) {
+            res.writeHead(400);
+            res.end(JSON.stringify({ error: e.message }));
+        }
         return;
     }
 

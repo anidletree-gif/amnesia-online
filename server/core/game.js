@@ -363,6 +363,11 @@ function resolveNight(room) {
         if (p) p.alive = false;
     });
 
+    // ★ 修复：死亡结算后立即广播最新玩家列表（含 alive 状态），前端面板立刻渲染死亡
+    if (killed.size > 0) {
+        broadcastToRoom(room.id, { type: 'player_list', players: getPlayerList(room) });
+    }
+
     // ★ 清空当前夜行动玩家，防止白天误操作
     room.currentNightPlayer = null;
 

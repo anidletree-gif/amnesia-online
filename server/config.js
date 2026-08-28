@@ -4,7 +4,7 @@ module.exports = {
     ALLOWED_HOST: null, // 公网域名白名单；null/留空则不限制（默认任意 Host 可访问）
 
     // 开放注册：true 时跳过邮箱验证码与域名白名单（本地/局域网开服免邮件，任意邮箱格式即可注册）
-    OPEN_REGISTER: false,
+    OPEN_REGISTER: true,
 
     // SMTP 邮件（QQ邮箱）—— 部署时请替换为自己的邮箱与授权码
     SMTP_USER: 'your-mail@example.com',
