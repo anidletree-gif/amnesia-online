@@ -289,7 +289,7 @@ function startNight(room) {
             }
         });
         resolveNight(room);
-    }, 30000);
+    }, config.ACTION_TIMEOUT || 300000);
 }
 
 function processNightAction(room, player, actionData) {
@@ -346,6 +346,14 @@ function resolveNight(room) {
         if (isKillEffective(room, p)) {
             const target = room.players.find(pl => pl.number === act.target && pl.alive);
             if (target) { killed.add(target.id); recordDeath(room, target, '被暗杀'); }
+        }
+        // ★ 侦探带刀：侦探暗杀仅对凶手阵营目标有效（刀真狼），好人/中立不误杀；人格分裂复制到侦探也继承
+        else if (p.role === '侦探' || (p.role === '人格分裂' && room.copyMap.get(p.id) === '侦探')) {
+            const target = room.players.find(pl => pl.number === act.target && pl.alive);
+            if (target && getCamp(target.role) === 'killer') {
+                killed.add(target.id);
+                recordDeath(room, target, '被侦探刀杀');
+            }
         }
     });
 
@@ -562,7 +570,14 @@ function isKillEffective(room, player) {
         const copiedRole = room.copyMap.get(player.id);
         killType = copiedRole ? getKillType(copiedRole) : 'never';
     }
-    switch (killType) { case 'always': return true; case 'never': return false; case 'conditional_awake': return room.fabricatorAwake; default: return false; }
+    switch (killType) {
+        case 'always': return true;
+        case 'never': return false;
+        case 'conditional_awake': return room.fabricatorAwake;
+        // ★ 侦探带刀：这里拿不到目标，统一在 resolveNight 里对侦探单独判断目标阵营
+        case 'detective': return false;
+        default: return false;
+    }
 }
 
 function shouldDieFromFlip(room, player, flipCard) {
@@ -663,7 +678,7 @@ function handleMessage(ws, playerId, msg) {
             const sender = room.players.find(p => p.id === playerId) || room.spectators.find(s => s.id === playerId);
             if (!sender) return;
             const isSpectator = room.spectators.some(s => s.id === playerId);
-            const msgText = typeof msg.message === 'string' ? msg.message.trim().slice(0, 200) : '';
+            const msgText = typeof msg.message === 'string' ? msg.message.trim().slice(0, 1000) : '';
             if (!msgText) return;
             // ★ 发言权限校验：夜晚/投票禁止聊天；白天仅当前发言人可聊；等待/结束后可自由聊；旁观者可聊但标记
             if (room.phase === 'night' || room.phase === 'vote') {

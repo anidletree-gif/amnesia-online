@@ -92,6 +92,24 @@
         .pw-volume i{display:block;height:100%;width:0%;border-radius:2px;background:linear-gradient(90deg,#7a6a58,#d4a05c);transition:width .1s;opacity:0}
         .pw-dead-x{position:absolute;top:4px;right:6px;font-size:12px;color:rgba(220,90,90,.85)}
         .pw-kick{position:absolute;top:-8px;right:-8px;background:#4a2a2a;border:1px solid #a06060;color:#ecc0c0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2}
+        /* ===== 公示容器（投票结果/白天死者/游戏结束统一展示） ===== */
+        #announceOverlay{position:fixed;inset:0;z-index:10006;background:radial-gradient(ellipse at 50% 50%, rgba(6,10,14,.92), rgba(1,2,4,.97));display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .35s}
+        #announceOverlay.show{opacity:1;pointer-events:auto}
+        .ann-card{max-width:560px;width:90%;background:linear-gradient(160deg,#1a1712,#0e0c09);border:1px solid rgba(200,170,120,.35);border-radius:14px 40px 14px 40px;padding:30px 34px;text-align:center;box-shadow:0 20px 60px rgba(0,0,0,.7), inset 0 0 60px rgba(180,140,80,.05);transform:translateY(20px) scale(.94);transition:transform .45s cubic-bezier(.2,1.4,.4,1)}
+        #announceOverlay.show .ann-card{transform:none}
+        .ann-icon{font-size:52px;margin-bottom:8px}
+        .ann-title{font-family:'Playfair Display',serif;font-size:30px;letter-spacing:4px;color:#ffd97a;text-shadow:0 0 24px rgba(255,217,122,.45);margin-bottom:6px}
+        .ann-title.dead{color:#e8a0a0;text-shadow:0 0 24px rgba(232,120,120,.4)}
+        .ann-title.win{color:#9fd8a8;text-shadow:0 0 24px rgba(130,220,150,.45)}
+        .ann-sub{font-size:13px;color:#a6987f;letter-spacing:2px;margin-bottom:14px}
+        .ann-body{font-size:13px;color:#cbbfa8;line-height:2;letter-spacing:.5px}
+        .ann-tally{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
+        .ann-tally span{background:rgba(255,217,122,.08);border:1px solid rgba(255,217,122,.25);border-radius:6px;padding:3px 12px;font-size:13px;color:#e8d9b8}
+        .ann-list{display:flex;flex-wrap:wrap;justify-content:center;gap:8px;margin-top:12px}
+        .ann-list span{background:rgba(150,140,120,.1);border:1px solid rgba(180,160,130,.25);border-radius:6px;padding:4px 10px;font-size:12px;color:#d8cdb8}
+        .ann-list span.dead{background:rgba(192,80,80,.12);border-color:rgba(192,80,80,.35);color:#e0a0a0}
+        .ann-close{margin-top:18px;padding:10px 44px;background:linear-gradient(150deg,#3a2e1e,#22190e);border:1px solid #b89a7a;color:#e8d9b8;border-radius:8px;font-size:14px;letter-spacing:3px;cursor:pointer;transition:all .2s}
+        .ann-close:hover{background:linear-gradient(150deg,#4a3a26,#2a1f12);box-shadow:0 0 16px rgba(184,154,122,.35)}
         /* 阶段小徽章（房间码旁） */
         .phase-badge{margin-left:12px;font-size:12px;padding:4px 12px;border-radius:999px;background:rgba(10,14,16,.6);border:1px solid rgba(180,150,120,.25);color:#d4c9b8;letter-spacing:1px;font-family:'Source Code Pro',monospace;display:none;align-items:center;gap:4px;white-space:nowrap}
         .phase-badge.night{display:inline-flex;border-color:rgba(90,143,232,.5);color:#a9c2ff;box-shadow:0 0 10px rgba(60,100,210,.25)}

@@ -822,6 +822,18 @@ ws.onclose = () => {
                         if(msg.killedNames) addChatLog('🌅 死者: '+msg.killedNames);
                         setPhaseIndicator(`☀️ 第${msg.day}天`, 'day', msg.speakRemaining || 120);
                         showPhaseBanner('☀️ 黎明破晓', `第 ${msg.day} 天`, '#e8c46a');
+                        // ★ 白天死者公示：弹公示容器停留展示
+                        if (msg.killedNames) {
+                            const deadList = msg.killedNames.split('、').map(n => ({ text: '☠ ' + n, dead: true }));
+                            showAnnounce({
+                                icon: '🌅',
+                                title: '昨夜死者',
+                                titleCls: 'dead',
+                                sub: `第 ${msg.day} 天 · 天亮了`,
+                                list: deadList,
+                                autoCloseMs: 7000
+                            });
+                        }
                         // ★ 修复：直接使用附带发言人信息启动发言
                         if (msg.currentSpeaker) {
                             currentSpeaker = msg.currentSpeaker;
@@ -893,6 +905,21 @@ ws.onclose = () => {
                         h += '</div>'; if(isHost) h += '<button class="memory-btn w-full mt-4" id="resetRoomBtn">↻ 重新激活</button>';
                         actionCard.innerHTML = h;
                         if(isHost) { const btn = getEl('resetRoomBtn'); if(btn) btn.onclick = () => ws.send(JSON.stringify({ type: 'reset_room' })); }
+                    }
+                    // ★ 游戏结束公示：全员身份揭晓
+                    if (msg.roles && msg.roles.length) {
+                        const roleList = msg.roles.slice().sort((a,b) => a.number - b.number).map(r => ({
+                            text: `${r.number}号 ${r.name} · ${r.role}${r.alive ? '' : ' ☠'}`,
+                            dead: !r.alive
+                        }));
+                        showAnnounce({
+                            icon: '🏆',
+                            title: (msg.winner || '') + ' 胜利',
+                            titleCls: 'win',
+                            sub: '游戏结束 · 身份揭晓',
+                            list: roleList,
+                            autoCloseMs: 12000
+                        });
                     }
                 } else if (msg.type === 'room_reset') {
                     phase = 'waiting'; isDead = false; hasVoted = false;
@@ -998,6 +1025,8 @@ ws.onclose = () => {
         playerListDiv.innerHTML = `<div id="playerListCol">${left.map(cardHtml).join('')}</div><div id="playerListCol">${right.map(cardHtml).join('')}</div>`;
         // ★ 我的回合时，给存活目标卡片挂上"点击展开行动"事件（bindNightTargetClicks 内部有守卫）
         bindNightTargetClicks();
+        // ★ 投票阶段：点卡片投票
+        if (phase === 'vote') bindVoteClicks();
     }
 
     // ========== 夜晚行动 / 投票 UI ==========
@@ -1215,37 +1244,75 @@ ws.onclose = () => {
         });
     }
 
-    // ===== 3D 投票桌（three.js 俯视木桌 + 环绕号码牌立牌） =====
+    // ===== 投票（狼人杀式：点玩家卡片 → 内联出 投票/弃权 按钮） =====
     function showVoteOptions() {
         if (hasVoted) return;
-        // 关闭 CSS 伪 3D 桌（如果残留）
+        // 关闭 3D 投票桌/行动桌残留
         const oldOv = document.getElementById('voteTableOverlay');
         if (oldOv) oldOv.remove();
         const oldFlip = document.getElementById('flipTableOverlay');
         if (oldFlip) oldFlip.remove();
 
-        // ★ 使用 three.js 真 3D 投票桌
-        if (window.Vote3D) {
-            const alive = players.filter(p => p.alive && p.number !== myNumber);
-            Vote3D.open(alive, (targetNumber) => {
-                hasVoted = true;
-                if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已投票，等待其他玩家…</p>';
-                if (ws) ws.send(JSON.stringify({ type: 'vote', target: targetNumber }));
-            });
-            return;
-        }
+        // ★ 狼人杀式：点玩家卡片投票（跟夜晚行动同款交互）
+        if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-[#b89a7a]">🗳️ 点击下方存活玩家卡片投票</p>';
+        renderPlayerList(); // 重建卡片后绑定点击
+    }
 
-        // 降级：无 three.js 时用简单列表
+    // ★ 投票阶段：点玩家卡片 -> 内联展开 [🗳️投票 / 🚫弃权]
+    function bindVoteClicks() {
+        if (!playerListDiv) return;
+        if (phase !== 'vote' || hasVoted || isDead || isSpectator) return;
         const alive = players.filter(p => p.alive && p.number !== myNumber);
-        if (actionCard) {
-            let h = `<h3 class="text-lg font-serif mb-4">🗳️ 投票处决</h3><div class="grid grid-cols-2 gap-3">`;
-            alive.forEach(p => h += `<div class="player-badge cursor-pointer" data-vote="${p.number}">${p.number}号 ${p.name}</div>`);
-            h += `<div class="player-badge cursor-pointer" data-vote="-1">🚫 弃权</div></div>`;
-            actionCard.innerHTML = h;
-            document.querySelectorAll('[data-vote]').forEach(b => b.addEventListener('click', () => {
-                if (ws && !hasVoted) { ws.send(JSON.stringify({ type: 'vote', target: parseInt(b.dataset.vote) })); actionCard.innerHTML = '<p class="text-center py-8">已投票</p>'; hasVoted = true; }
-            }));
-        }
+        document.querySelectorAll('.pw-card').forEach(card => {
+            const num = parseInt(card.dataset.num);
+            if (!num || num === myNumber) return;
+            const isAliveTarget = alive.some(p => p.number === num);
+            const oldArea = card.parentElement.querySelector('.pw-action-area');
+            if (oldArea) oldArea.remove();
+            if (!isAliveTarget) { card.style.cursor = 'default'; return; }
+            card.style.cursor = 'pointer';
+            card.onclick = null;
+            card.addEventListener('click', function handler(ev) {
+                ev.stopPropagation();
+                if (phase !== 'vote' || hasVoted || isDead || isSpectator) {
+                    document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                    return;
+                }
+                document.querySelectorAll('.pw-card').forEach(c => { if (c !== card) { c.style.borderColor = ''; c.style.boxShadow = ''; } });
+                card.style.borderColor = '#e86a5a';
+                card.style.boxShadow = '0 0 14px rgba(232,106,90,.5)';
+                document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                const col = card.parentElement;
+                let area = col.querySelector('.pw-action-area');
+                if (area) { area.remove(); return; }
+                area = document.createElement('div');
+                area.className = 'pw-action-area';
+                area.innerHTML = `
+                    <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;">
+                        <button class="pw-act-btn" data-vote-target="${num}" style="border-color:#e86a5a;color:#ffd0c8;">🗳️ 投票</button>
+                        <button class="pw-act-btn" data-vote-abstain="1">🚫 弃权</button>
+                    </div>`;
+                col.insertBefore(area, card.nextSibling);
+                area.querySelector('[data-vote-target]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (ws && !hasVoted) {
+                        hasVoted = true;
+                        ws.send(JSON.stringify({ type: 'vote', target: num }));
+                        document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                        if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已投票，等待其他玩家…</p>';
+                    }
+                });
+                area.querySelector('[data-vote-abstain]').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    if (ws && !hasVoted) {
+                        hasVoted = true;
+                        ws.send(JSON.stringify({ type: 'vote', target: -1 }));
+                        document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
+                        if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已弃权</p>';
+                    }
+                });
+            });
+        });
     }
 
     // 更新 3D 投票桌：标记已投票的人（绿色光边）
@@ -1253,23 +1320,71 @@ ws.onclose = () => {
         if (window.Vote3D) Vote3D.markVoted(votedNumbers || []);
     }
 
-    // 投票结果：three.js 场景里被处决者号码牌被"清下桌" 3D 动画 + 结果横幅
-    function showVoteResult(executedName, tally, executedNumber) {
-        if (window.Vote3D) {
-            Vote3D.reveal(executedNumber, executedName, tally);
-            return;
+    // ===== 公示容器（投票结果/白天死者/游戏结束 统一展示，停留可关闭） =====
+    function showAnnounce(opts) {
+        // opts: { icon, title, titleCls, sub, body, tally:{num:cnt}, list:[{text, dead}], autoCloseMs }
+        // 关闭已有公示层
+        const old = document.getElementById('announceOverlay');
+        if (old) old.remove();
+        const ov = document.createElement('div');
+        ov.id = 'announceOverlay';
+        let h = `<div class="ann-card">
+            ${opts.icon ? `<div class="ann-icon">${opts.icon}</div>` : ''}
+            <div class="ann-title ${opts.titleCls || ''}">${opts.title}</div>
+            ${opts.sub ? `<div class="ann-sub">${opts.sub}</div>` : ''}
+            ${opts.body ? `<div class="ann-body">${opts.body}</div>` : ''}`;
+        if (opts.tally && Object.keys(opts.tally).length) {
+            h += `<div class="ann-tally">`;
+            for (let [num, cnt] of Object.entries(opts.tally)) {
+                h += `<span>${num}号 · ${cnt}票</span>`;
+            }
+            h += `</div>`;
         }
-        // 降级：简单结果横幅
-        let tallyTxt = '';
-        if (tally) { for (let [num, cnt] of Object.entries(tally)) tallyTxt += `${num}号 ${cnt}票 · `; }
-        const res = document.createElement('div');
-        res.className = 'vt-result';
-        res.innerHTML = executedName
-            ? `<div class="vr-main">⚖️ ${executedName} 被处决</div><div class="vr-tally">${tallyTxt}</div>`
-            : `<div class="vr-main" style="color:#c08070;">平票 · 无人被处决</div><div class="vr-tally">${tallyTxt}</div>`;
-        document.body.appendChild(res);
-        requestAnimationFrame(() => res.classList.add('show'));
-        setTimeout(() => { res.classList.remove('show'); setTimeout(() => res.remove(), 500); }, 2400);
+        if (opts.list && opts.list.length) {
+            h += `<div class="ann-list">`;
+            opts.list.forEach(it => { h += `<span class="${it.dead ? 'dead' : ''}">${it.text}</span>`; });
+            h += `</div>`;
+        }
+        h += `<button class="ann-close">确 认</button></div>`;
+        ov.innerHTML = h;
+        document.body.appendChild(ov);
+        requestAnimationFrame(() => requestAnimationFrame(() => ov.classList.add('show')));
+        ov.querySelector('.ann-close').addEventListener('click', () => {
+            ov.classList.remove('show');
+            setTimeout(() => ov.remove(), 350);
+        });
+        // 自动关闭（可配置）
+        if (opts.autoCloseMs) {
+            setTimeout(() => {
+                if (ov.isConnected) { ov.classList.remove('show'); setTimeout(() => ov.remove(), 350); }
+            }, opts.autoCloseMs);
+        }
+        return ov;
+    }
+
+    // 投票结果公示（取代 3D 清下桌动画）
+    function showVoteResult(executedName, tally, executedNumber) {
+        const tallyObj = {};
+        if (tally) { for (let [num, cnt] of Object.entries(tally)) tallyObj[num] = cnt; }
+        if (executedName) {
+            showAnnounce({
+                icon: '⚖️',
+                title: `${executedName} 被处决`,
+                titleCls: 'dead',
+                sub: `第 ${currentDay || ''} 天 · 投票处决`,
+                tally: tallyObj,
+                autoCloseMs: 6000
+            });
+        } else {
+            showAnnounce({
+                icon: '🤝',
+                title: '平票 · 无人被处决',
+                titleCls: '',
+                sub: '票数相同，今日无人出局',
+                tally: tallyObj,
+                autoCloseMs: 6000
+            });
+        }
     }
 
     // ========== UI 函数 ==========

@@ -17,7 +17,7 @@
   },
   "侦探": {
     "camp": "good",
-    "kill": "never",
+    "kill": "detective",
     "check": "true",
     "flip": "match_self",
     "awake": false,
