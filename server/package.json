@@ -1,6 +1,6 @@
 {
   "name": "amnesia-online",
-  "version": "2.6.0",
+  "version": "1.0.1-beta",
   "description": "失忆症Online · 记忆裂痕 · 多人联机身份推理桌游",
   "main": "server.js",
   "scripts": {
