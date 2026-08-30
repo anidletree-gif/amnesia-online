@@ -40,6 +40,31 @@
         .modal{display:none;position:fixed;z-index:1000;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.7);backdrop-filter:blur(6px);align-items:center;justify-content:center}
         .modal-content{max-width:500px;width:90%;max-height:70vh;overflow-y:auto;position:relative}
         .close{position:absolute;right:20px;top:15px;font-size:28px;cursor:pointer;color:#a69b8a}
+        /* 底部悬浮导航 */
+        .bottom-nav{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:60;display:flex;gap:6px;background:rgba(18,22,20,.92);backdrop-filter:blur(12px);border:1px solid rgba(180,150,120,.25);border-radius:16px;padding:6px;box-shadow:0 12px 40px rgba(0,0,0,.6)}
+        .bottom-nav .nav-item{display:flex;align-items:center;gap:6px;padding:9px 18px;border-radius:11px;color:#a69b8a;font-size:13px;cursor:pointer;letter-spacing:1px;transition:all .2s;border:1px solid transparent}
+        .bottom-nav .nav-item.active{background:linear-gradient(145deg,#2a2a24,#1a1a16);border-color:#7a6a58;color:#e3dbcd}
+        .bottom-nav .nav-item:active{transform:scale(.96)}
+        .bottom-nav .nav-dot{width:6px;height:6px;border-radius:50%;background:currentColor;opacity:.6}
+        .bottom-nav .nav-item.active .nav-dot{background:#e8c46a;opacity:1}
+        /* 个人页条目 */
+        .pf-item{display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(180,150,120,.08);cursor:pointer;font-size:14px}
+        .pf-item:last-child{border-bottom:none}
+        .pf-item span:first-child{color:#a69b8a}
+        /* 编辑浮层 */
+        .edit-sheet{position:fixed;left:0;right:0;bottom:0;z-index:10030;background:linear-gradient(160deg,#1e2420,#131815);border-top:1px solid rgba(180,150,120,.3);border-radius:16px 16px 0 0;padding:20px;transform:translateY(100%);transition:transform .25s ease}
+        .edit-sheet.show{transform:translateY(0)}
+        .edit-sheet h3{font-size:16px;color:#e8c46a;letter-spacing:2px;margin-bottom:14px}
+        .edit-sheet input{width:100%;background:rgba(15,19,17,.8);border:1px solid rgba(150,120,90,.25);border-radius:8px;color:#e3dbcd;padding:11px 14px;font-size:14px;margin-bottom:10px;outline:none}
+        .edit-sheet .erow{display:flex;gap:8px}
+        .edit-sheet .erow input{flex:1;margin-bottom:0}
+        .edit-sheet .ebtn{flex:1;background:linear-gradient(145deg,#2a2a24,#1a1a16);border:1px solid #7a6a58;border-radius:8px;color:#d4c9b8;padding:11px;cursor:pointer;font-size:13px;letter-spacing:1px;text-align:center}
+        .edit-sheet .ebtn.primary{border-color:#5fae78;color:#cfe8d4}
+        .edit-sheet .ebtn.danger{border-color:#a06060;color:#ecc0c0}
+        .edit-sheet .emsg{font-size:11px;margin-top:8px;min-height:16px;color:#e8a0a0}
+        .edit-sheet .emsg.ok{color:#7fb88a}
+        .edit-mask{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:10025;display:none}
+        .edit-mask.show{display:block}
         .avatar-img{width:36px;height:36px;border-radius:50%;object-fit:cover;border:2px solid #b89a7a;cursor:pointer}
         .kick-btn{position:absolute;top:-4px;right:-4px;background:#4a2a2a;border:1px solid #a06060;color:#ecc0c0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center}
         .player-avatar{width:28px;height:28px;border-radius:50%;object-fit:cover;border:1px solid #b89a7a;margin-right:6px;vertical-align:middle}
@@ -92,6 +117,28 @@
         .pw-volume i{display:block;height:100%;width:0%;border-radius:2px;background:linear-gradient(90deg,#7a6a58,#d4a05c);transition:width .1s;opacity:0}
         .pw-dead-x{position:absolute;top:4px;right:6px;font-size:12px;color:rgba(220,90,90,.85)}
         .pw-kick{position:absolute;top:-8px;right:-8px;background:#4a2a2a;border:1px solid #a06060;color:#ecc0c0;border-radius:50%;width:20px;height:20px;font-size:10px;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:2}
+        /* ===== 玩家卡片 · 身份标记角标 ===== */
+        .pw-mark-btn{position:absolute;bottom:2px;right:2px;background:rgba(20,25,23,.8);border:1px solid rgba(180,150,120,.3);color:#b89a7a;border-radius:4px;width:16px;height:16px;font-size:9px;line-height:1;cursor:pointer;display:flex;align-items:center;justify-content:center;z-index:3;transition:all .15s}
+        .pw-mark-btn:hover{background:#3a3a30;border-color:#e8c46a;color:#e8c46a}
+        .pw-mark-badge{position:absolute;top:2px;left:2px;font-size:9px;padding:1px 5px;border-radius:8px;color:#fff;font-weight:600;letter-spacing:.5px;z-index:3;box-shadow:0 1px 4px rgba(0,0,0,.5);max-width:52px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+        .pw-mark-badge.mk-wolf{background:#8a2a2a}
+        .pw-mark-badge.mk-god{background:#2a4a8a}
+        .pw-mark-badge.mk-good{background:#2a7a3a}
+        .pw-mark-badge.mk-killer{background:#5a1a1a}
+        .pw-mark-badge.mk-neutral{background:#7a5a2a}
+        .pw-mark-badge.mk-suspect{background:#6a5a2a}
+        .pw-mark-badge.mk-default{background:#3a3a3a}
+        /* 标记选择悬浮窗（居中弹层） */
+        .pw-mark-menu{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.9);z-index:10020;background:rgba(18,22,20,.97);border:1px solid rgba(180,150,120,.4);border-radius:14px;padding:16px;box-shadow:0 12px 50px rgba(0,0,0,.8);min-width:260px;max-width:90vw;max-height:80vh;overflow-y:auto;opacity:0;transition:all .2s ease}
+        .pw-mark-menu.show{opacity:1;transform:translate(-50%,-50%) scale(1)}
+        .pw-mark-menu .mm-target{font-size:14px;color:#e8c46a;letter-spacing:1px;margin-bottom:12px;text-align:center}
+        .pw-mark-menu .mm-grid{display:flex;flex-wrap:wrap;gap:6px;justify-content:center}
+        .pw-mark-menu .mm-group{width:100%;font-size:10px;color:#8a7a66;padding:6px 4px 2px;letter-spacing:2px;border-top:1px solid #2a2a24;margin-top:4px;text-align:left}
+        .pw-mark-menu .mm-item{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:13px;color:#d4c9b8;cursor:pointer;border-radius:5px}
+        .pw-mark-menu .mm-item:hover{background:#2a2f2a}
+        .pw-mark-menu .mm-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+        .pw-mark-menu .mm-clear{display:flex;align-items:center;gap:8px;padding:6px 10px;font-size:12px;color:#c08070;cursor:pointer;border-radius:5px;border-top:1px solid #2a2a24;margin-top:4px}
+        .pw-mark-menu .mm-clear:hover{background:#3a1f1f}
         /* ===== 公示容器（投票结果/白天死者/游戏结束统一展示） ===== */
         #announceOverlay{position:fixed;inset:0;z-index:10006;background:radial-gradient(ellipse at 50% 50%, rgba(6,10,14,.92), rgba(1,2,4,.97));display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity .35s}
         #announceOverlay.show{opacity:1;pointer-events:auto}
@@ -226,9 +273,13 @@
 <div id="userBar" style="position:fixed;top:10px;left:10px;z-index:50;display:flex;align-items:center;gap:10px;">
     <img id="avatarImg" class="avatar-img" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='24' r='15' fill='%23b8a888'/%3E%3Cpath d='M6 62c0-15 11-22 26-22s26 7 26 22v2H6z' fill='%23b8a888'/%3E%3C/svg%3E" onclick="document.getElementById('avatarInput').click()">
     <span id="userNickname" class="text-sm text-[#d4c9b8]"></span>
+    <a id="adminLink" href="#" target="_blank" style="display:none;font-size:12px;color:#e8c46a;border:1px solid #e8c46a;border-radius:4px;padding:2px 8px;text-decoration:none;">后台</a>
     <button class="memory-btn text-xs py-1 px-3 w-auto" onclick="logout()">退出</button>
 </div>
 <input type="file" id="avatarInput" accept="image/*" style="display:none;" onchange="uploadAvatar(event)">
+
+<!-- 主页面右上角教学入口 -->
+<a href="/guide.html" id="guideLink" style="position:fixed;top:12px;right:14px;z-index:55;display:inline-flex;align-items:center;gap:6px;font-size:13px;color:#e8c46a;border:1px solid #e8c46a;border-radius:6px;padding:6px 14px;text-decoration:none;letter-spacing:2px;background:rgba(18,22,20,.7);backdrop-filter:blur(8px);">教学</a>
 
 <div class="relative z-10 max-w-[600px] mx-auto px-4 py-16 pb-20" id="app">
     <div id="loginPanel" class="memory-card">
@@ -240,7 +291,10 @@
             <button class="memory-btn" onclick="showRoomList()">☷列表</button>
         </div>
         <div id="createPanel" class="mt-5 space-y-3" style="display:none">
-            <select id="presetSelect" class="memory-input"></select>
+            <div class="flex gap-2">
+                <select id="presetSelect" class="memory-input flex-1"></select>
+                <button class="memory-btn w-auto px-3" onclick="showPresetDetail()" title="查看本板子角色构成">板子</button>
+            </div>
             <label class="flex items-center gap-2"><input type="checkbox" id="publicRoomCheck" checked>公开房间</label>
             <button class="memory-btn" onclick="createRoom()">✧建立档案</button>
         </div>
@@ -264,12 +318,58 @@
         <div class="memory-card">
             <h3 class="text-xs uppercase tracking-wider text-[#a69b8a] mb-2">☷记录片段</h3>
             <div id="chatLogArea" class="chat-log"></div>
-            <div class="flex gap-2 mt-3">
-                <input id="chatInput" class="memory-input py-2" placeholder="写下片段…" disabled>
-                <button id="sendChatBtn" class="memory-btn w-auto px-6" onclick="sendChat()" disabled>↗</button>
-            </div>
+             <div class="flex gap-2 mt-3">
+                 <input id="chatInput" class="memory-input py-2" placeholder="写下片段…" disabled>
+                 <button id="sendChatBtn" class="memory-btn w-auto px-6" onclick="sendChat()" disabled>↗</button>
+             </div>
         </div>
     </div>
+
+    <!-- 我的视图（预加载，切换零加载） -->
+    <div id="viewProfile" style="display:none">
+        <!-- 顶部用户卡 -->
+        <div class="memory-card" style="display:flex;align-items:center;gap:16px">
+            <img id="pfAvatar" class="avatar-img" style="width:60px;height:60px;border-radius:50%;object-fit:cover;border:2px solid #b89a7a" src="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='24' r='15' fill='%23b8a888'/%3E%3Cpath d='M6 62c0-15 11-22 26-22s26 7 26 22v2H6z' fill='%23b8a888'/%3E%3C/svg%3E">
+            <div style="flex:1;min-width:0">
+                <div id="pfName" style="font-size:18px;color:#f0e8d8;letter-spacing:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+                <div id="pfSig" style="font-size:12px;color:#8a7a66;margin-top:4px;line-height:1.5"></div>
+            </div>
+            <span style="color:#b89a7a;font-size:12px;cursor:pointer" onclick="openEditSheet('nickname')">编辑</span>
+        </div>
+
+        <!-- 资料卡 -->
+        <div class="memory-card">
+            <h3 style="font-size:13px;color:#b89a7a;letter-spacing:2px;margin-bottom:12px">基本资料</h3>
+            <div class="pf-item" onclick="openEditSheet('nickname')"><span>昵称</span><span id="pfNickVal" style="color:#8a7a66">-</span></div>
+            <div class="pf-item" onclick="openEditSheet('signature')"><span>签名</span><span id="pfSigVal" style="color:#8a7a66">-</span></div>
+        </div>
+
+        <!-- 安全卡 -->
+        <div class="memory-card">
+            <h3 style="font-size:13px;color:#b89a7a;letter-spacing:2px;margin-bottom:12px">账号安全</h3>
+            <div class="pf-item" onclick="openEditSheet('password')"><span>修改密码</span><span style="color:#8a7a66">›</span></div>
+            <div class="pf-item" onclick="openEditSheet('reset')"><span>找回密码</span><span style="color:#8a7a66">›</span></div>
+        </div>
+
+        <!-- 标签卡 -->
+        <div class="memory-card">
+            <h3 style="font-size:13px;color:#b89a7a;letter-spacing:2px;margin-bottom:12px">个人标签</h3>
+            <div id="pfTagList" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+
+        <!-- 自定义标记卡（对局里给玩家贴标签用，与个人标签独立） -->
+        <div class="memory-card">
+            <h3 style="font-size:13px;color:#b89a7a;letter-spacing:2px;margin-bottom:12px">自定义标记</h3>
+            <div class="info" style="font-size:11px;color:#8a7a66;margin-bottom:8px">对局里给玩家贴的自定义标签</div>
+            <div id="pfMarkList" style="display:flex;flex-wrap:wrap;gap:8px"></div>
+        </div>
+    </div>
+</div>
+
+<!-- 底部悬浮导航 -->
+<div class="bottom-nav">
+    <div class="nav-item active" id="navGame" onclick="switchView('game')"><span class="nav-dot"></span>对局</div>
+    <div class="nav-item" id="navProfile" onclick="switchView('profile')"><span class="nav-dot"></span>我的</div>
 </div>
 
 <!-- 悬浮按钮（右下角，不遮挡右上角退出键） -->
@@ -281,9 +381,13 @@
 <!-- 模态框 -->
 <div id="ruleModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('ruleModal')">&times;</span><h2 class="text-2xl font-serif mb-4">◈档案规则</h2><div id="ruleContent"></div></div></div>
 <div id="recordModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('recordModal')">&times;</span><h2 class="text-2xl font-serif mb-4">⌛你的记忆碎片</h2><div id="recordContent"></div></div></div>
+<div id="presetModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('presetModal')">&times;</span><h2 class="text-2xl font-serif mb-4">板子构成</h2><div id="presetDetailContent"></div></div></div>
+<div id="settingsModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('settingsModal')">&times;</span><h2 class="text-2xl font-serif mb-4">设置</h2><div id="settingsContent"></div></div></div>
 <div id="roomListModal" class="modal"><div class="modal-content memory-card"><span class="close" onclick="closeModal('roomListModal')">&times;</span><h2 class="text-2xl font-serif mb-4">⌘开放档案室</h2><div id="roomListContent"></div></div></div>
 <div id="checkResultToast" class="fixed top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 memory-card px-8 py-5 text-2xl font-serif shadow-2xl hidden z-50"></div>
-<script src="game.js?v=final4"></script>
+<div class="edit-mask" id="editMask" onclick="closeEditSheet()"></div>
+<div class="edit-sheet" id="editSheet"></div>
+<script src="game.js?v=final6"></script>
 <script src="vendor/three.min.js"></script>
 <script src="vote3d.js"></script>
 <script>

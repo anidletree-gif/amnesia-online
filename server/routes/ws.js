@@ -1,33 +1,84 @@
 const url = require('url');
 const game = require('../core/game');
+const auth = require('../core/auth');
 
 const connections = new Map();
 
+// ★ 鉴权：外部连接必须发送 {type:'auth', token} 首条消息；本机回环(机器人/压测)免鉴权
+//   playerId（邮箱）从会话中解析，不再走 URL query，避免 token/邮箱被 nginx 访问日志明文记录
+const AUTH_TIMEOUT = 5000;
+
 function handleWs(ws, req) {
-    // ★ 心跳标记：收到 pong 视为存活，超时未响应会被 server.js 强制断开
     ws.isAlive = true;
     ws.on('pong', () => { ws.isAlive = true; });
 
     const parsedUrl = url.parse(req.url, true);
-    const playerId = parsedUrl.query.playerId || Math.random().toString(36).substring(2, 10);
+    // ★ 关键：nginx 反代时 Node 看到的 remoteAddress 全是 127.0.0.1，
+    //   必须优先用 nginx 注入的 X-Real-IP 判断真实客户端来源，否则外部连接会被误判为回环、跳过鉴权
+    const realIp = req.headers['x-real-ip'] || req.socket?.remoteAddress || '';
+    const isLoopback = realIp === '127.0.0.1' || realIp === '::1' || realIp === '::ffff:127.0.0.1' || realIp === 'localhost';
 
+    // ★ 本机回环：playerId 从 query 取，免鉴权（bot_play.js / 压测脚本走这里）
+    if (isLoopback) {
+        const loopbackId = parsedUrl.query.playerId;
+        if (loopbackId) {
+            attach(ws, loopbackId);
+        } else {
+            try { ws.send(JSON.stringify({ type: 'error', message: '缺少 playerId' })); } catch(_) {}
+            try { ws.close(); } catch(_) {}
+        }
+        return;
+    }
+
+    // ★ 外部连接：等待首条 auth 消息，超时未认证则断开
+    let authed = false;
+    const authTimer = setTimeout(() => {
+        if (!authed) {
+            try { ws.send(JSON.stringify({ type: 'error', message: '认证超时' })); } catch(_) {}
+            try { ws.close(); } catch(_) {}
+        }
+    }, AUTH_TIMEOUT);
+
+    ws.on('message', function onFirst(rawData) {
+        if (authed) return;
+        let strData;
+        if (Buffer.isBuffer(rawData)) strData = rawData.toString();
+        else if (typeof rawData === 'string') strData = rawData;
+        else if (rawData instanceof ArrayBuffer) strData = new TextDecoder().decode(rawData);
+        else { return; } // 非文本首帧直接忽略，等超时
+
+        let msg;
+        try { msg = JSON.parse(strData); } catch(e) { return; }
+        if (msg.type !== 'auth' || typeof msg.token !== 'string') return;
+
+        const sess = auth.verifySession(msg.token);
+        if (!sess) {
+            try { ws.send(JSON.stringify({ type: 'error', message: '登录已失效，请重新登录' })); } catch(_) {}
+            try { ws.close(); } catch(_) {}
+            return;
+        }
+        authed = true;
+        clearTimeout(authTimer);
+        ws.removeListener('message', onFirst);
+        attach(ws, sess.email);
+    });
+}
+
+function attach(ws, playerId) {
     const oldWs = connections.get(playerId);
     if (oldWs && oldWs !== ws) {
-        // 记录旧连接，close 时只清理"仍指向旧连接"的条目，避免误删重连后的新连接
         const theOld = oldWs;
-        oldWs.onclose = null; // 移除旧连接自带的 close 处理器
-        oldWs.onmessage = null;
-        oldWs.onerror = null;
-        // ★ 通知旧连接被顶下线（客户端收到后停止自动重连，避免双端互顶乒乓）
+        theOld.onclose = null;
+        theOld.onmessage = null;
+        theOld.onerror = null;
         try { theOld.send(JSON.stringify({ type: 'kicked_offline', message: '账号已在其他设备登录' })); } catch(_) {}
         try { theOld.close(); } catch(_) {}
     }
 
     connections.set(playerId, ws);
-    ws.send(JSON.stringify({ type: 'connected', playerId }));
+    try { ws.send(JSON.stringify({ type: 'connected', playerId })); } catch(_) {}
 
     ws.on('message', (rawData) => {
-        // 将数据转换为字符串（兼容 Buffer / string / ArrayBuffer）
         let strData;
         if (Buffer.isBuffer(rawData)) {
             strData = rawData.toString();
@@ -36,7 +87,6 @@ function handleWs(ws, req) {
         } else if (rawData instanceof ArrayBuffer) {
             strData = new TextDecoder().decode(rawData);
         } else {
-            // 无法转为文本，当作二进制音频转发（★ 仅白天当前发言人可发语音，且携带发言人编号）
             if (game.canPlayerSpeakVoice(playerId)) {
                 const roomId = game.playerRoomMap.get(playerId);
                 if (roomId) {
@@ -48,12 +98,10 @@ function handleWs(ws, req) {
             return;
         }
 
-        // 尝试解析 JSON
         let msg;
         try {
             msg = JSON.parse(strData);
         } catch (e) {
-            // 解析失败，也当作二进制音频（★ 同样做权限过滤 + 携带发言人编号）
             if (game.canPlayerSpeakVoice(playerId)) {
                 const roomId = game.playerRoomMap.get(playerId);
                 if (roomId) {
@@ -65,13 +113,11 @@ function handleWs(ws, req) {
             return;
         }
 
-        // 处理 JSON 消息
         if (!msg.type) {
             ws.send(JSON.stringify({ type: 'error', message: '缺少消息类型' }));
             return;
         }
         if (msg.type === 'volume') {
-            // ★ 音量也只允许白天当前发言人上报，且只转发数值不转发原始
             if (game.canPlayerSpeakVoice(playerId)) {
                 const roomId = game.playerRoomMap.get(playerId);
                 if (roomId) broadcastToRoom(roomId, { type: 'volume', number: msg.number, volume: msg.volume }, playerId);
@@ -79,8 +125,6 @@ function handleWs(ws, req) {
             return;
         }
         if (msg.type === 'signal') {
-            // ★ WebRTC 语音信令转发（语音 P2P：媒体不经过服务器，服务器只转发 offer/answer/ICE）
-            // 寻址用房间内唯一的 number，服务端映射到真实 playerId，避免泄露邮箱 id
             const roomId = game.playerRoomMap.get(playerId);
             const room = game.getRoom(roomId);
             if (!room) return;
@@ -95,7 +139,6 @@ function handleWs(ws, req) {
             }
             return;
         }
-        // 核心游戏逻辑
         try {
             game.handleMessage(ws, playerId, msg);
         } catch (error) {
@@ -107,9 +150,10 @@ function handleWs(ws, req) {
     });
 
     ws.on('close', () => {
-        // 仅当 Map 中仍指向此连接时才删除，避免误删重连后的新连接
-        if (connections.get(playerId) === ws) connections.delete(playerId);
-        game.handleDisconnect(playerId);
+        if (connections.get(playerId) === ws) {
+            connections.delete(playerId);
+            game.handleDisconnect(playerId);
+        }
     });
 
     ws.on('error', () => {
@@ -135,7 +179,6 @@ function broadcastToRoom(roomId, msg, excludePlayerId = null) {
     });
 }
 
-// ★ 音频转发：前4字节为大端发言人编号，其后为音频数据（解决前端无法区分发言人导致的混流冲突）
 function broadcastAudioToRoom(roomId, number, data, excludePlayerId = null) {
     const room = game.getRoom(roomId);
     if (!room) return;

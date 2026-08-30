@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>失忆症 · 管理后台</title>
+<style>
+body{background:#0c1210;color:#d4c9b8;font-family:system-ui,sans-serif;margin:0;padding:20px}
+h1{font-size:22px;color:#e8c46a;letter-spacing:2px;border-bottom:1px solid #2a2a24;padding-bottom:10px}
+h2{font-size:15px;color:#b89a7a;margin-top:24px;letter-spacing:1px}
+.tabs{display:flex;gap:8px;margin:14px 0;flex-wrap:wrap}
+.tabs button{background:#1a1a16;border:1px solid #7a6a58;color:#d4c9b8;padding:8px 18px;border-radius:6px;cursor:pointer}
+.tabs button.active{background:#3a4a3c;border-color:#5fae78;color:#d8f0dc}
+.panel{display:none}.panel.show{display:block}
+table{width:100%;border-collapse:collapse;background:#141a18;border-radius:8px;overflow:hidden}
+th{background:#1a221f;color:#a69b8a;font-size:12px;padding:8px 10px;text-align:left;letter-spacing:1px}
+td{padding:8px 10px;font-size:13px;border-top:1px solid #222a27;word-break:break-all}
+tr:hover td{background:#1a2420}
+.badge{padding:2px 8px;border-radius:10px;font-size:11px;display:inline-block}
+.badge.green{background:#1f3a28;color:#7fb88a}.badge.red{background:#3a1f1f;color:#e8a0a0}.badge.yellow{background:#3a3320;color:#e8c46a}.badge.gray{background:#2a2a24;color:#a69b8a}
+.badge.blue{background:#1f2a3a;color:#8ab8e8}
+.btn{background:#2a2a24;border:1px solid #7a6a58;color:#d4c9b8;padding:5px 12px;border-radius:5px;cursor:pointer;font-size:12px;margin:2px}
+.btn.danger{background:#3a1f1f;border-color:#a06060;color:#ecc0c0}
+.btn:hover{filter:brightness(1.2)}
+textarea{width:100%;height:200px;background:#1a1a16;color:#d4c9b8;border:1px solid #7a6a58;border-radius:6px;padding:10px;font-family:monospace;font-size:12px;box-sizing:border-box}
+.cards{display:flex;gap:12px;flex-wrap:wrap}
+.stat{background:#141a18;border:1px solid #2a2a24;border-radius:10px;padding:14px 20px;min-width:120px}
+.stat .n{font-size:28px;color:#e8c46a;font-weight:bold}
+.stat .l{font-size:12px;color:#a69b8a;margin-top:4px}
+.err{color:#e8a0a0;font-size:13px}
+</style>
+</head>
+<body>
+<h1>失忆症 · 管理后台</h1>
+<div class="tabs">
+<button data-tab="overview" class="active">概览</button>
+<button data-tab="rooms">房间监控</button>
+<button data-tab="users">用户管理</button>
+<button data-tab="presets">板子配置</button>
+</div>
+
+<div id="panel-overview" class="panel show">
+<div class="cards" id="ovCards"></div>
+<p style="font-size:13px;color:#a69b8a">服务器时间: <span id="srvTime"></span></p>
+</div>
+
+<div id="panel-rooms" class="panel"><div id="roomList">加载中...</div></div>
+<div id="panel-users" class="panel"><div id="userList">加载中...</div></div>
+<div id="panel-presets" class="panel">
+<p>当前激活: <span id="activeName" style="color:#e8c46a"></span></p>
+<textarea id="presetsJson"></textarea>
+<div style="margin-top:10px">
+<button class="btn" id="savePresetsBtn">保存板子</button>
+<button class="btn" id="setActiveBtn">设为默认</button>
+</div>
+<div id="presetMsg" class="err"></div>
+</div>
+
+<script>
+var TOKEN = new URLSearchParams(location.search).get('token') || localStorage.getItem('amnesia_admin_token') || '';
+localStorage.setItem('amnesia_admin_token', TOKEN);
+
+function aj(url, opt) {
+    opt = opt || {};
+    opt.headers = opt.headers || {};
+    opt.headers['Authorization'] = 'Bearer ' + TOKEN;
+    if (opt.body && typeof opt.body === 'object') {
+        opt.headers['Content-Type'] = 'application/json';
+        opt.body = JSON.stringify(opt.body);
+    }
+    return fetch(url, opt).then(function(r) {
+        if (r.status === 404) throw new Error('未授权');
+        return r.json();
+    });
+}
+
+// Tab 切换
+document.querySelectorAll('.tabs button').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.tabs button').forEach(function(b){ b.classList.remove('active'); });
+        document.querySelectorAll('.panel').forEach(function(p){ p.classList.remove('show'); });
+        btn.classList.add('active');
+        document.getElementById('panel-' + btn.dataset.tab).classList.add('show');
+        if (btn.dataset.tab === 'rooms') loadRooms();
+        if (btn.dataset.tab === 'users') loadUsers();
+        if (btn.dataset.tab === 'presets') loadPresets();
+    });
+});
+
+setInterval(function(){ document.getElementById('srvTime').textContent = new Date().toLocaleString(); }, 1000);
+
+function loadOverview() {
+    aj('/admin/stats').then(function(d) {
+        document.getElementById('ovCards').innerHTML =
+            '<div class="stat"><div class="n">' + d.totalUsers + '</div><div class="l">注册用户</div></div>' +
+            '<div class="stat"><div class="n">' + d.activeRooms + '</div><div class="l">进行中房间</div></div>' +
+            '<div class="stat"><div class="n">' + d.inGamePlayers + '</div><div class="l">在线玩家</div></div>' +
+            '<div class="stat"><div class="n">' + d.presets + '</div><div class="l">板子数</div></div>';
+    }).catch(function(e){ document.getElementById('ovCards').innerHTML = '<p class="err">加载失败：' + e.message + '</p>'; });
+}
+
+function loadRooms() {
+    document.getElementById('roomList').innerHTML = '加载中...';
+    aj('/admin/rooms').then(function(list) {
+        if (!list.length) { document.getElementById('roomList').innerHTML = '暂无房间'; return; }
+        var h = '<table><tr><th>房间</th><th>板子</th><th>阶段</th><th>天数</th><th>人数</th><th>房主</th><th>玩家</th></tr>';
+        list.forEach(function(r) {
+            var ph = r.phase === 'night' ? '<span class="badge blue">夜晚</span>'
+                   : r.phase === 'day' ? '<span class="badge yellow">白天</span>'
+                   : r.phase === 'vote' ? '<span class="badge red">投票</span>'
+                   : r.gameStarted ? '<span class="badge green">游戏中</span>'
+                   : '<span class="badge gray">等待</span>';
+            var pls = r.players.map(function(p){ return p.number + '号' + p.name + (p.alive ? '' : '☠'); }).join(' ');
+            h += '<tr><td>' + r.id + '</td><td>' + r.preset + '</td><td>' + ph + '</td><td>' + r.day + '</td><td>' + r.playerCount + '/' + r.max + '</td><td>' + r.hostName + '</td><td style="font-size:11px">' + pls + '</td></tr>';
+        });
+        h += '</table>';
+        document.getElementById('roomList').innerHTML = h;
+    }).catch(function(e){ document.getElementById('roomList').innerHTML = '<p class="err">加载失败：' + e.message + '</p>'; });
+}
+
+function loadUsers() {
+    document.getElementById('userList').innerHTML = '加载中...';
+    aj('/admin/users').then(function(list) {
+        if (!list.length) { document.getElementById('userList').innerHTML = '暂无用户'; return; }
+        var h = '<table><tr><th>邮箱</th><th>昵称</th><th>头像</th><th>注册时间</th><th>操作</th></tr>';
+        list.forEach(function(u) {
+            h += '<tr><td>' + u.email + '</td><td>' + u.nickname + '</td><td>' + (u.hasAvatar ? '<span class="badge green">有</span>' : '<span class="badge gray">无</span>') + '</td><td>' + new Date(u.createdAt).toLocaleDateString() + '</td>' +
+                 '<td><button class="btn" data-reset="' + u.email + '">重置密码</button> <button class="btn danger" data-del="' + u.email + '">删除</button></td></tr>';
+        });
+        h += '</table>';
+        document.getElementById('userList').innerHTML = h;
+        document.querySelectorAll('[data-reset]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var email = btn.dataset.reset;
+                var pw = prompt('为 ' + email + ' 设置新密码(至少6位)');
+                if (!pw) return;
+                aj('/admin/users/reset', { method: 'POST', body: { email: email, password: pw } }).then(function(d) {
+                    alert(d.ok ? '密码已重置' : '失败：' + d.error);
+                    loadUsers();
+                });
+            });
+        });
+        document.querySelectorAll('[data-del]').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var email = btn.dataset.del;
+                if (!confirm('确定删除用户 ' + email + ' ?')) return;
+                aj('/admin/users/delete', { method: 'POST', body: { email: email } }).then(function(d) {
+                    alert(d.ok ? '已删除' : '失败：' + d.error);
+                    loadUsers(); loadOverview();
+                });
+            });
+        });
+    }).catch(function(e){ document.getElementById('userList').innerHTML = '<p class="err">加载失败：' + e.message + '</p>'; });
+}
+
+var allPresets = {};
+var activeName = '';
+function loadPresets() {
+    document.getElementById('presetMsg').textContent = '';
+    aj('/admin/presets').then(function(d) {
+        allPresets = d.presets || {};
+        activeName = d.active || '';
+        document.getElementById('activeName').textContent = activeName;
+        document.getElementById('presetsJson').value = JSON.stringify(allPresets, null, 2);
+    }).catch(function(e){ document.getElementById('presetMsg').textContent = '加载失败：' + e.message; });
+}
+document.getElementById('savePresetsBtn').addEventListener('click', function() {
+    var p;
+    try { p = JSON.parse(document.getElementById('presetsJson').value); } catch(e) { alert('JSON 错误'); return; }
+    aj('/admin/presets', { method: 'POST', body: { presets: p, active: activeName } }).then(function() {
+        document.getElementById('presetMsg').textContent = '保存成功';
+        loadOverview();
+    }).catch(function(e){ document.getElementById('presetMsg').textContent = '保存失败：' + e.message; });
+});
+document.getElementById('setActiveBtn').addEventListener('click', function() {
+    var n = prompt('预设名称');
+    if (!n) return;
+    aj('/admin/presets', { method: 'POST', body: { presets: allPresets, active: n } }).then(function() {
+        location.reload();
+    }).catch(function(e){ alert('失败：' + e.message); });
+});
+
+loadOverview();
+</script>
+</body>
+</html>

@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>失忆症Online · 教学</title>
+<style>
+    *{font-family:'Source Code Pro','Courier New',monospace}
+    h1,h2,h3,.serif{font-family:'Playfair Display','Times New Roman',serif;font-weight:500;letter-spacing:1px}
+    body{background-color:#0c1210;background-image:radial-gradient(circle at 30% 40%,rgba(180,150,110,0.05) 0%,transparent 40%),repeating-linear-gradient(0deg,rgba(140,110,80,0.03) 0px,transparent 1px,transparent 40px);color:#d4c9b8;min-height:100vh;margin:0}
+    .wrap{max-width:640px;margin:0 auto;padding:20px 16px 40px}
+    .head{display:flex;align-items:center;gap:12px;margin-bottom:20px}
+    .head .back{color:#a69b8a;text-decoration:none;font-size:13px;border:1px solid rgba(180,150,120,.25);border-radius:6px;padding:6px 12px;letter-spacing:1px}
+    .head .back:hover{color:#e3dbcd;border-color:#b89a7a}
+    .head h1{font-size:22px;color:#f0e8d8;margin:0;letter-spacing:2px}
+    .card{background:rgba(25,30,28,0.7);backdrop-filter:blur(8px);border:1px solid rgba(180,150,120,0.15);box-shadow:0 15px 30px -10px rgba(0,0,0,0.5),0 0 0 1px rgba(210,180,140,0.05) inset;border-radius:4px 20px 4px 20px;padding:20px;margin-bottom:16px}
+    .card h2{font-size:14px;color:#b89a7a;letter-spacing:2px;margin:0 0 12px}
+    .sec-title{font-size:12px;color:#8a7a66;letter-spacing:3px;text-transform:uppercase;margin:20px 0 10px}
+    .rule-p{font-size:13px;color:#cbbfa8;line-height:1.9;margin:0 0 10px}
+    .rule-p b{color:#e8c46a;font-weight:600}
+    .faq-item{border-bottom:1px solid rgba(180,150,120,.08);padding:12px 0}
+    .faq-item:last-child{border-bottom:none}
+    .faq-q{font-size:14px;color:#e3dbcd;cursor:pointer;display:flex;justify-content:space-between;align-items:center;gap:10px}
+    .faq-q .arrow{color:#8a7a66;transition:transform .2s;flex-shrink:0}
+    .faq-item.open .faq-q .arrow{transform:rotate(180deg)}
+    .faq-a{font-size:13px;color:#a69b8a;line-height:1.8;margin-top:8px;display:none}
+    .faq-item.open .faq-a{display:block}
+    .role-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px}
+    .role-card{background:rgba(18,22,20,.6);border:1px solid rgba(180,150,120,.2);border-radius:10px;padding:14px;cursor:pointer;text-align:center;transition:border-color .2s,transform .2s}
+    .role-card:hover{border-color:#b89a7a;transform:translateY(-2px)}
+    .role-card img{width:64px;height:64px;object-fit:contain;border-radius:8px;margin:0 auto 8px;display:block}
+    .role-card .rn{font-size:15px;color:#e8dcc4;letter-spacing:1px}
+    .role-card .rc{font-size:11px;color:#8a7a66;margin-top:4px}
+    .role-card .rc.good{color:#7fb88a}
+    .role-card .rc.killer{color:#e08080}
+    .role-card .rc.neutral{color:#d4a05c}
+    /* 详情弹层 */
+    .mask{position:fixed;inset:0;background:rgba(0,0,0,.7);backdrop-filter:blur(4px);z-index:90;display:none;align-items:center;justify-content:center}
+    .mask.show{display:flex}
+    .sheet{max-width:440px;width:90%;max-height:80vh;overflow-y:auto;background:linear-gradient(160deg,#1e2420,#131815);border:1px solid rgba(180,150,120,.35);border-radius:12px 28px 12px 28px;padding:24px;position:relative}
+    .sheet .close{position:absolute;top:14px;right:18px;color:#a69b8a;font-size:22px;cursor:pointer;background:none;border:none}
+    .sheet .close:hover{color:#ecc0c0}
+    .sheet .d-head{display:flex;align-items:center;gap:14px;margin-bottom:16px}
+    .sheet .d-head img{width:72px;height:72px;object-fit:contain;border-radius:10px}
+    .sheet .d-name{font-size:20px;color:#f0e8d8;letter-spacing:2px}
+    .sheet .d-camp{font-size:12px;margin-top:4px}
+    .d-row{margin-bottom:12px}
+    .d-row .k{font-size:11px;color:#8a7a66;letter-spacing:2px;margin-bottom:4px}
+    .d-row .v{font-size:13px;color:#cbbfa8;line-height:1.7}
+    .backtop{text-align:center;margin-top:24px}
+    .backtop a{color:#a69b8a;font-size:12px;text-decoration:none;letter-spacing:1px}
+</style>
+</head>
+<body>
+<div class="wrap">
+    <div class="head">
+        <a class="back" href="/">返回</a>
+        <h1>教学 · 失忆症Online</h1>
+    </div>
+
+    <div class="card">
+        <h2>游戏规则</h2>
+        <p class="rule-p" id="ruleNight"></p>
+        <p class="rule-p" id="ruleDay"></p>
+        <p class="rule-p" id="ruleWin"></p>
+    </div>
+
+    <div class="sec-title">常见问题 FAQ</div>
+    <div class="card" id="faqList"></div>
+
+    <div class="sec-title">全部角色</div>
+    <div class="card">
+        <div class="role-grid" id="roleGrid"></div>
+    </div>
+
+    <div class="backtop"><a href="/">返回对局</a></div>
+</div>
+
+<div class="mask" id="roleMask" onclick="if(event.target===this)closeRole()">
+    <div class="sheet">
+        <button class="close" onclick="closeRole()">&times;</button>
+        <div class="d-head">
+            <img id="rdImg" src="" alt="">
+            <div>
+                <div class="d-name" id="rdName"></div>
+                <div class="d-camp" id="rdCamp"></div>
+            </div>
+        </div>
+        <div class="d-row"><div class="k">暗杀</div><div class="v" id="rdKill"></div></div>
+        <div class="d-row"><div class="k">查验</div><div class="v" id="rdCheck"></div></div>
+        <div class="d-row"><div class="k">翻牌</div><div class="v" id="rdFlip"></div></div>
+        <div class="d-row"><div class="k">胜利条件</div><div class="v" id="rdWin"></div></div>
+    </div>
+</div>
+
+<script>
+let roleData = {};
+const campCls = { '凶手阵营':'killer', '好人阵营':'good', '中立阵营':'neutral' };
+const campColor = { '凶手阵营':'#e08080', '好人阵营':'#7fb88a', '中立阵营':'#d4a05c' };
+
+async function load() {
+    try {
+        const r = await fetch('/roles.json');
+        const d = await r.json();
+        document.getElementById('ruleNight').innerHTML = '<b>夜晚</b>　' + d.flow.night;
+        document.getElementById('ruleDay').innerHTML = '<b>白天</b>　' + d.flow.day;
+        document.getElementById('ruleWin').innerHTML = '<b>胜负</b>　' + d.flow.win;
+
+        // FAQ
+        let fh = '';
+        (d.faq || []).forEach((item, i) => {
+            fh += '<div class="faq-item" onclick="this.classList.toggle(\'open\')">'
+                + '<div class="faq-q">' + item.q + '<span class="arrow">▾</span></div>'
+                + '<div class="faq-a">' + item.a + '</div></div>';
+        });
+        document.getElementById('faqList').innerHTML = fh || '<p style="font-size:13px;color:#8a7a66">暂无FAQ</p>';
+
+        // 角色网格
+        roleData = d.roles || {};
+        let gh = '';
+        for (const [name, v] of Object.entries(roleData)) {
+            const cc = campCls[v.camp] || '';
+            gh += '<div class="role-card" onclick="openRole(\'' + name.replace(/'/g, '') + '\')">'
+                + (v.image ? '<img src="' + v.image + '" alt="' + name + '">' : '<div style="width:64px;height:64px;margin:0 auto 8px;border-radius:8px;background:rgba(180,150,120,.1);display:flex;align-items:center;justify-content:center;font-size:24px;color:#b89a7a">◈</div>')
+                + '<div class="rn">' + name + '</div>'
+                + '<div class="rc ' + cc + '">' + v.camp + '</div></div>';
+        }
+        document.getElementById('roleGrid').innerHTML = gh;
+    } catch(e) {
+        document.getElementById('ruleNight').innerHTML = '规则加载失败，请刷新重试';
+    }
+}
+
+window.openRole = function(name) {
+    const v = roleData[name];
+    if (!v) return;
+    document.getElementById('rdImg').src = v.image || '';
+    document.getElementById('rdImg').style.display = v.image ? '' : 'none';
+    document.getElementById('rdName').textContent = name;
+    const campEl = document.getElementById('rdCamp');
+    campEl.textContent = v.camp;
+    campEl.style.color = campColor[v.camp] || '#a69b8a';
+    document.getElementById('rdKill').textContent = v.kill;
+    document.getElementById('rdCheck').textContent = v.check;
+    document.getElementById('rdFlip').textContent = v.flip;
+    document.getElementById('rdWin').textContent = v.win;
+    document.getElementById('roleMask').classList.add('show');
+};
+window.closeRole = function() {
+    document.getElementById('roleMask').classList.remove('show');
+};
+
+load();
+</script>
+</body>
+</html>

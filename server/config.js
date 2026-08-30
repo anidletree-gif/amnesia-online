@@ -3,14 +3,15 @@ module.exports = {
     PORT: 3000,
     ALLOWED_HOST: null, // 公网域名白名单；null/留空则不限制（默认任意 Host 可访问）
 
-    // 开放注册：true 时跳过邮箱验证码与域名白名单（本地/局域网开服免邮件，任意邮箱格式即可注册）
-    OPEN_REGISTER: true,
+    // 开放注册：false = 走邮箱验证码注册（生产推荐）；本地/局域网开服如需免邮件可临时设 true
+    OPEN_REGISTER: false,
 
     // SMTP 邮件（QQ邮箱）—— 部署时请替换为自己的邮箱与授权码
     SMTP_USER: 'your-mail@example.com',
     SMTP_PASS: 'your-smtp-auth-code',
 
-    // 管理后台 —— 部署时请修改
+    // 管理后台 —— 真实密码请放在 server/admin_password.txt（已被 .gitignore 排除），不要提交到 git
+    ADMIN_USER: 'admin@amnesia.online',
     ADMIN_PASSWORD: 'change-me',
 
     // 允许注册的邮箱域名

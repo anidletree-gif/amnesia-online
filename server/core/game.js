@@ -203,6 +203,45 @@ function spectateRoom(roomId, playerId, playerName) {
     const spectator = { id: playerId, name: playerName };
     room.spectators.push(spectator);
     playerRoomMap.set(playerId, roomId);
+
+    // ★ 观战者进房立即下发完整状态（阶段/天数/玩家/死者/聊天记录），否则观战页是空的
+    const now = Date.now();
+    const syncPayload = {
+        type: 'state_sync',
+        phase: room.phase, day: room.day,
+        myNumber: null,
+        isHost: false,
+        alive: true,
+        isSpectator: true,
+        gameStarted: room.gameStarted,
+        players: getPlayerList(room),
+        flipCards: room.flipCards,
+        votes: room.votes ? Object.fromEntries(Object.entries(room.votes).map(([id, target]) => {
+            const voter = room.players.find(p => p.id === id);
+            return [voter ? voter.number : id, target];
+        })) : {},
+        deathRecords: (room.deathRecords || []).map(d => ({ number: d.number, name: d.name, day: d.day })),
+        chatHistory: room.chatHistory ? room.chatHistory.slice(-50) : [],
+        currentSpeaker: null, speakRemaining: 0, isMyTurn: false,
+        nightActive: room.phase === 'night', voteActive: room.phase === 'vote'
+    };
+    if (room.phase === 'day' && room.currentSpeaker) {
+        const speakerPlayer = room.players.find(p => p.id === room.currentSpeaker);
+        if (speakerPlayer) {
+            syncPayload.currentSpeaker = speakerPlayer.number;
+            const elapsed = room.speakStartTime ? (now - room.speakStartTime) / 1000 : 0;
+            syncPayload.speakRemaining = Math.max(0, Math.ceil(room.speakDuration - elapsed));
+        }
+    }
+    sendToPlayer(playerId, syncPayload);
+    if (room.phase === 'day' && room.currentSpeaker) {
+        const speakerPlayer = room.players.find(p => p.id === room.currentSpeaker);
+        if (speakerPlayer) {
+            const elapsed = room.speakStartTime ? (now - room.speakStartTime) / 1000 : 0;
+            const remaining = Math.max(0, Math.ceil(room.speakDuration - elapsed));
+            sendToPlayer(playerId, { type: 'speak_start', speaker: speakerPlayer.number, maxTime: remaining });
+        }
+    }
     return true;
 }
 
@@ -553,13 +592,13 @@ function getCheckResult(room, player, targetPlayer) {
         case 'fixed_killer': result = '是凶手'; break;
         case 'misconstruct': const prev = room.lastRoundAction[player.number]; result = (room.day === 1) ? '非凶手' : (prev === 'kill' ? '是凶手' : '非凶手'); break;
     }
-    // ★ 虚构者：对目标施加"下次查验反转"标记（挂在被验者身上）
-    if (player.role === '虚构者') room.checkModifier.set(targetPlayer.number, true);
-    // ★ 被验者若带反转标记，则本次结果反转并消耗标记
+    // ★ 虚构者：先消费目标身上已有的反转标记，再施加新标记
+    //   （顺序不能反，否则虚构者会立即反转自己的查验结果，导致"下一次被验反转"失效）
     if (room.checkModifier.has(targetPlayer.number)) {
         result = result === '是凶手' ? '非凶手' : '是凶手';
         room.checkModifier.delete(targetPlayer.number);
     }
+    if (player.role === '虚构者') room.checkModifier.set(targetPlayer.number, true);
     return result;
 }
 
@@ -601,7 +640,7 @@ function checkGameOver(room) {
     const killerAlive = alive.some(p => getCamp(p.role) === 'killer');
     const goodAlive = alive.some(p => getCamp(p.role) === 'good');
     const neutralAlive = alive.filter(p => getCamp(p.role) === 'neutral');
-    if (alive.length === 2 && neutralAlive.length > 0) return neutralAlive.length === 2 ? '中立阵营' : neutralAlive[0].role;
+    if (alive.length === 2 && neutralAlive.length > 0) return '中立阵营'; // ★ 统一返回阵营名（1中立或2中立均为中立独赢）
     if (!goodAlive) return '凶手阵营';
     if (!killerAlive) return '好人阵营';
     return null;
@@ -678,17 +717,16 @@ function handleMessage(ws, playerId, msg) {
             const sender = room.players.find(p => p.id === playerId) || room.spectators.find(s => s.id === playerId);
             if (!sender) return;
             const isSpectator = room.spectators.some(s => s.id === playerId);
+            // ★ 观战者全程禁言（只看不说，避免干扰对局）
+            if (isSpectator) return;
             const msgText = typeof msg.message === 'string' ? msg.message.trim().slice(0, 1000) : '';
             if (!msgText) return;
-            // ★ 发言权限校验：夜晚/投票禁止聊天；白天仅当前发言人可聊；等待/结束后可自由聊；旁观者可聊但标记
-            if (room.phase === 'night' || room.phase === 'vote') {
-                if (!isSpectator) return; // 玩家在夜晚/投票禁言；旁观者仅允许看，不发言
-                return;
-            }
-            if (room.phase === 'day' && !isSpectator) {
+            // ★ 发言权限校验：夜晚/投票禁止聊天；白天仅当前发言人可聊；等待/结束后可自由聊
+            if (room.phase === 'night' || room.phase === 'vote') return;
+            if (room.phase === 'day') {
                 if (room.currentSpeaker !== playerId) return; // 白天只有当前发言人可以聊
             }
-            const name = isSpectator ? `👁️ ${sender.name}` : sender.name;
+            const name = sender.name;
             const chatMsg = { type: 'chat', from: name, message: msgText };
             if (!room.chatHistory) room.chatHistory = [];
             room.chatHistory.push(chatMsg);
@@ -729,10 +767,11 @@ function handleDisconnect(playerId) {
         // ★ 等待阶段：
         // 房主离开 → 解散房间并通知剩余玩家；普通玩家离开 → 移除占位（不残留幽灵房间）
         if (player.id === room.hostId) {
+            // ★ 修复：先广播解散通知，再删除房间，否则 broadcastToRoom 因 getRoom 返回 null 而发不出去
+            broadcastToRoom(roomId, { type: 'room_dissolved', message: '房主已离开，房间解散' });
             rooms.delete(roomId);
             room.players.forEach(p => playerRoomMap.delete(p.id));
             room.spectators.forEach(s => playerRoomMap.delete(s.id));
-            broadcastToRoom(roomId, { type: 'room_dissolved', message: '房主已离开，房间解散' });
         } else {
             room.players = room.players.filter(p => p.id !== playerId);
             playerRoomMap.delete(playerId);
@@ -745,10 +784,34 @@ function handleDisconnect(playerId) {
     broadcastToRoom(roomId, { type: 'player_list', players: getPlayerList(room) });
 }
 
+// ★ 后台管理：获取全部房间状态（含进行中/已结束的，含玩家详情）
+function getAllRooms() {
+    const result = [];
+    for (let [id, room] of rooms) {
+        const host = room.players.find(p => p.id === room.hostId);
+        result.push({
+            id,
+            preset: room.presetName,
+            phase: room.phase,
+            day: room.day,
+            players: room.players.map(p => ({ number: p.number, name: p.name, role: p.role, alive: p.alive, connected: p.connected, isHost: p.id === room.hostId })),
+            playerCount: room.players.filter(p => p.connected).length,
+            max: room.rolePool.length,
+            hostName: host?.name || '未知',
+            gameStarted: room.gameStarted,
+            createdAt: room.createdAt || ''
+        });
+    }
+    result.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+    return result;
+}
+
 module.exports = {
     createRoom, getRoom, getPublicRooms, joinRoom,
     spectateRoom, kickPlayer, startGame, resetRoom,
     handleMessage, handleDisconnect,
     canPlayerSpeakVoice,   // ★ 语音权限校验
-    playerRoomMap
+    playerRoomMap,
+    getAllRooms,           // ★ 后台房间监控
+    rooms                  // ★ 后台统计
 };

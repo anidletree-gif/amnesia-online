@@ -1,6 +1,49 @@
 (function(){
     "use strict";
 
+    // ========== 全局音效（WebAudio 合成，无需音频文件） ==========
+    let sfxCtx = null;
+    function initSfx() {
+        if (!sfxCtx) { try { sfxCtx = new (window.AudioContext || window.webkitAudioContext)(); } catch(e) { sfxCtx = null; } }
+        if (sfxCtx && sfxCtx.state === 'suspended') sfxCtx.resume().catch(()=>{});
+        return sfxCtx;
+    }
+    function tone(freq, dur, type, vol, delay) {
+        const c = initSfx(); if (!c) return;
+        try {
+            const t0 = c.currentTime + (delay || 0);
+            const o = c.createOscillator();
+            const g = c.createGain();
+            o.type = type || 'sine';
+            o.frequency.setValueAtTime(freq, t0);
+            g.gain.setValueAtTime(0, t0);
+            g.gain.linearRampToValueAtTime(vol || 0.12, t0 + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+            o.connect(g); g.connect(c.destination);
+            o.start(t0); o.stop(t0 + dur + 0.02);
+        } catch(e) {}
+    }
+    function sfx(type) {
+        switch (type) {
+            case 'click': tone(880, 0.07, 'square', 0.05); break;          // 通用点击
+            case 'flip':  tone(320, 0.09, 'triangle', 0.10); tone(640, 0.08, 'triangle', 0.08, 0.05); break; // 翻牌
+            case 'vote':  tone(220, 0.10, 'sawtooth', 0.08); tone(440, 0.10, 'square', 0.06, 0.06); break;   // 投票
+            case 'night': tone(180, 0.6, 'sine', 0.10); tone(120, 0.8, 'sine', 0.08, 0.1); break;            // 入夜
+            case 'day':   tone(520, 0.12, 'sine', 0.09); tone(780, 0.15, 'sine', 0.07, 0.08); break;         // 天亮
+            case 'warn':  tone(300, 0.15, 'sawtooth', 0.08); tone(300, 0.15, 'sawtooth', 0.08, 0.18); break; // 警告
+        }
+    }
+    // ★ 全局点击音：委托捕获所有按钮/可交互卡片
+    document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (!t) return;
+        const tag = (t.tagName || '').toLowerCase();
+        if (tag === 'button') { sfx('click'); return; }
+        if (t.closest && t.closest('.memory-btn, .pw-card, .pw-act-btn, .flip-card, .ft-card, .ann-close, .player-badge, [data-vote]')) {
+            sfx('click');
+        }
+    }, true);
+
     // ========== 用户状态 ==========
     let currentUser = null;
     try {
@@ -11,6 +54,101 @@
     if (!currentUser || !currentUser.email) {
         location.href = '/login.html';
         return;
+    }
+
+    // ========== 玩家身份标记（按房间隔离，仅自己可见，辅助推理） ==========
+    // 通用标记（无 emoji，纯文字）
+    const GENERIC_MARKS = [
+        { key: 'good',    label: '好',   color: '#2a7a3a' },
+        { key: 'wolf',    label: '狼',   color: '#8a2a2a' },
+        { key: 'neutral', label: '中立', color: '#7a5a2a' },
+        { key: 'notwolf', label: '非狼', color: '#2a6a8a' },
+        { key: 'god',     label: '神职', color: '#2a4a8a' }
+    ];
+    // ★ 本局身份：从 preset 组成读取（presetRoles 由 loadPresets 填充）
+    let presetRoles = [];
+
+    function marksKey() { return 'amnesia_marks_' + (roomId || 'global'); }
+    function getPlayerMarks() {
+        try { return JSON.parse(localStorage.getItem(marksKey()) || '{}'); } catch(e) { return {}; }
+    }
+    function getAllMarkOptions() {
+        // 本局身份 + 通用 + 自定义标记（currentUser.marks，与个人标签 tags 完全独立）
+        const roleOpts = presetRoles.map(r => ({ key: 'role:' + r, label: r, color: '#5a3a5a' }));
+        const custom = (Array.isArray(currentUser.marks) ? currentUser.marks : []).map(m => ({ key: 'mark:' + m, label: m, color: '#4a4a4a' }));
+        return { roleOpts, generic: GENERIC_MARKS, custom };
+    }
+    function getPlayerMark(num) {
+        const m = getPlayerMarks();
+        if (m[num]) {
+            const all = getAllMarkOptions();
+            const found = [...all.roleOpts, ...all.generic, ...all.custom].find(o => o.key === m[num]);
+            if (found) return found;
+        }
+        return null;
+    }
+    function setPlayerMark(num, key) {
+        const m = getPlayerMarks();
+        if (key) m[num] = key; else delete m[num];
+        localStorage.setItem(marksKey(), JSON.stringify(m));
+    }
+    // ★ 根据板子名读取本局身份列表
+    async function loadPresetRoles(presetName) {
+        try {
+            const r = await fetch('/admin/presets', { headers: { 'Authorization': 'Bearer ' + (currentUser?.token || '') } });
+            const d = await r.json();
+            const cfg = d && d.presets ? d.presets[presetName] : null;
+            presetRoles = cfg ? Object.keys(cfg) : [];
+        } catch(e) { presetRoles = []; }
+    }
+    // 绑定标记按钮点击（每次渲染后调用）
+    function bindMarkButtons() {
+        document.querySelectorAll('.pw-mark-btn').forEach(btn => {
+            btn.onclick = null;
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const num = parseInt(btn.dataset.mark);
+                if (!num) return;
+                showMarkMenu(num);
+            });
+        });
+    }
+    // ★ 悬浮窗标记：居中弹层，顶部显示标记对象，下方标记网格
+    function showMarkMenu(num) {
+        const old = document.querySelector('.pw-mark-menu');
+        if (old) old.remove();
+        const p = players.find(x => x.number === num);
+        const { roleOpts, generic, custom } = getAllMarkOptions();
+        const menu = document.createElement('div');
+        menu.className = 'pw-mark-menu';
+        let h = `<div class="mm-target">标记对象 · ${num}号${p ? ' ' + p.name : ''}</div><div class="mm-grid">`;
+        if (roleOpts.length) {
+            h += `<div class="mm-group">本局身份</div>`;
+            roleOpts.forEach(o => { h += `<div class="mm-item" data-k="${o.key}"><span class="mm-dot" style="background:${o.color}"></span>${o.label}</div>`; });
+        }
+        h += `<div class="mm-group">通用</div>`;
+        generic.forEach(o => { h += `<div class="mm-item" data-k="${o.key}"><span class="mm-dot" style="background:${o.color}"></span>${o.label}</div>`; });
+        if (custom.length) {
+            h += `<div class="mm-group">我的标签</div>`;
+            custom.forEach(o => { h += `<div class="mm-item" data-k="${o.key}"><span class="mm-dot" style="background:${o.color}"></span>${o.label}</div>`; });
+        }
+        h += `</div><div class="mm-clear" data-clear="1">清除标记</div>`;
+        menu.innerHTML = h;
+        document.body.appendChild(menu);
+        requestAnimationFrame(() => menu.classList.add('show'));
+        menu.querySelectorAll('.mm-item[data-k]').forEach(it => {
+            it.addEventListener('click', () => {
+                setPlayerMark(num, it.dataset.k);
+                menu.remove();
+                renderPlayerList();
+            });
+        });
+        menu.querySelector('.mm-clear').addEventListener('click', () => {
+            setPlayerMark(num, null);
+            menu.remove();
+            renderPlayerList();
+        });
+        menu.addEventListener('click', (ev) => { if (ev.target === menu) { menu.remove(); } });
     }
 
     // ========== DOM 元素 ==========
@@ -38,29 +176,206 @@
 
     if (userNickname) {
     userNickname.textContent = currentUser.nickname;
+    // ★ 管理员显示后台入口 + 我的入口（权限组 0=管理员，1=用户，两者入口都保留）
+    if (currentUser.isAdmin || currentUser.role === 0) {
+        const al = getEl('adminLink');
+        if (al) {
+            al.style.display = 'inline-block';
+            al.href = '/admin?token=' + encodeURIComponent(currentUser.token || '');
+        }
+    }
     userNickname.style.cursor = 'pointer';
-    userNickname.title = '点击修改昵称';
-    userNickname.onclick = async () => {
-        const nn = prompt('输入新昵称（1-12位，中文/字母/数字）', currentUser.nickname || '');
-        if (!nn || nn.trim() === currentUser.nickname) return;
-        try {
-            const r = await fetch('/api/update-nickname', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ email: currentUser.email, nickname: nn.trim() })
-            });
-            const d = await r.json();
-            if (r.ok) {
-                currentUser.nickname = d.nickname;
-                localStorage.setItem('amnesia_user', JSON.stringify(currentUser));
-                userNickname.textContent = d.nickname;
-                alert('昵称已更新为：' + d.nickname);
-            } else {
-                alert(d.error || '修改失败');
-            }
-        } catch(e) { alert('网络错误，请重试'); }
-    };
+    userNickname.title = '个人设置';
+    userNickname.onclick = () => switchView('profile');
 }
+
+// ========== 视图切换（对局 / 我的，预加载零跳转） ==========
+window.switchView = function(v) {
+    const login = getEl('loginPanel'), game = getEl('gamePanel'), profile = getEl('viewProfile');
+    const navG = getEl('navGame'), navP = getEl('navProfile');
+    if (v === 'profile') {
+        if (login) login.style.display = 'none';
+        if (game) game.style.display = 'none';
+        if (profile) profile.style.display = 'block';
+        if (navG) navG.classList.remove('active');
+        if (navP) navP.classList.add('active');
+        renderProfile();
+    } else {
+        if (login) login.style.display = 'block';
+        if (profile) profile.style.display = 'none';
+        if (navG) navG.classList.add('active');
+        if (navP) navP.classList.remove('active');
+    }
+};
+
+// ========== 个人页数据渲染 ==========
+function renderProfile() {
+    const name = getEl('pfName'), sig = getEl('pfSig'), nickV = getEl('pfNickVal'), sigV = getEl('pfSigVal'), av = getEl('pfAvatar'), tagList = getEl('pfTagList');
+    if (name) name.textContent = currentUser.nickname || '';
+    if (sig) sig.textContent = currentUser.signature || '还没有签名';
+    if (nickV) nickV.textContent = currentUser.nickname || '-';
+    if (sigV) sigV.textContent = currentUser.signature || '未设置';
+    if (av) av.src = currentUser.avatar || DEFAULT_AVATAR;
+    if (tagList) {
+        const tags = Array.isArray(currentUser.tags) ? currentUser.tags : [];
+        let h = tags.map((t, i) => '<span style="background:rgba(180,150,120,.12);border:1px solid rgba(180,150,120,.3);border-radius:14px;padding:4px 12px;font-size:13px;color:#e3dbcd;cursor:pointer" onclick="removeTagAt(' + i + ')">' + t + ' <span style="color:#c08070;font-weight:bold;margin-left:4px">×</span></span>').join('');
+        h += '<span style="background:rgba(180,150,120,.12);border:1px dashed rgba(180,150,120,.4);border-radius:14px;padding:4px 12px;font-size:13px;color:#a69b8a;cursor:pointer" onclick="openEditSheet(\'tag\')">+ 添加</span>';
+        tagList.innerHTML = h;
+    }
+    // ★ 自定义标记（对局贴标签用，与个人标签独立）
+    const markList = getEl('pfMarkList');
+    if (markList) {
+        const marks = Array.isArray(currentUser.marks) ? currentUser.marks : [];
+        let h = marks.map((m, i) => '<span style="background:rgba(180,150,120,.12);border:1px solid rgba(180,150,120,.3);border-radius:14px;padding:4px 12px;font-size:13px;color:#e3dbcd;cursor:pointer" onclick="removeMarkAt(' + i + ')">' + m + ' <span style="color:#c08070;font-weight:bold;margin-left:4px">×</span></span>').join('');
+        h += '<span style="background:rgba(180,150,120,.12);border:1px dashed rgba(180,150,120,.4);border-radius:14px;padding:4px 12px;font-size:13px;color:#a69b8a;cursor:pointer" onclick="openEditSheet(\'mark\')">+ 添加</span>';
+        markList.innerHTML = h;
+    }
+}
+
+// ========== 编辑浮层 ==========
+window.openEditSheet = function(type) {
+    const sheet = getEl('editSheet'), mask = getEl('editMask');
+    if (!sheet || !mask) return;
+    let h = '';
+    if (type === 'nickname') {
+        h = '<h3>修改昵称</h3><label style="font-size:11px;color:#8a7a66">昵称（1-12位）</label><input id="esNick" maxlength="12" value="' + (currentUser.nickname || '') + '">'
+            + '<div class="erow"><button class="ebtn" onclick="closeEditSheet()">取消</button><button class="ebtn primary" onclick="saveNickname()">保存</button></div>'
+            + '<div class="emsg" id="esMsg"></div>';
+    } else if (type === 'signature') {
+        h = '<h3>修改签名</h3><label style="font-size:11px;color:#8a7a66">个性签名（最多50字）</label><input id="esSig" maxlength="50" value="' + (currentUser.signature || '') + '">'
+            + '<div class="erow"><button class="ebtn" onclick="closeEditSheet()">取消</button><button class="ebtn primary" onclick="saveSignature()">保存</button></div>'
+            + '<div class="emsg" id="esMsg"></div>';
+    } else if (type === 'password') {
+        h = '<h3>修改密码</h3><label style="font-size:11px;color:#8a7a66">原密码</label><input id="esOld" type="password" placeholder="输入原密码">'
+            + '<label style="font-size:11px;color:#8a7a66">新密码</label><input id="esNew" type="password" placeholder="至少6位">'
+            + '<label style="font-size:11px;color:#8a7a66">确认新密码</label><input id="esConfirm" type="password" placeholder="再次输入">'
+            + '<div class="erow"><button class="ebtn" onclick="closeEditSheet()">取消</button><button class="ebtn primary" onclick="changePw()">修改</button></div>'
+            + '<div class="emsg" id="esMsg"></div>';
+    } else if (type === 'reset') {
+        h = '<h3>找回密码</h3><div style="font-size:11px;color:#8a7a66;margin-bottom:8px">通过邮箱验证码重置</div><label style="font-size:11px;color:#8a7a66">邮箱</label><input id="esEmail" type="email" placeholder="your@email.com">'
+            + '<div class="erow"><input id="esCode" maxlength="6" placeholder="6位验证码" style="flex:1;margin:0"><button class="ebtn" onclick="sendResetCode()" style="flex:0 0 auto">发送</button></div>'
+            + '<label style="font-size:11px;color:#8a7a66;margin-top:8px">新密码</label><input id="esNewPw" type="password" placeholder="至少6位">'
+            + '<div class="erow"><button class="ebtn" onclick="closeEditSheet()">取消</button><button class="ebtn danger" onclick="resetPw()">重置</button></div>'
+            + '<div class="emsg" id="esMsg"></div>';
+    } else if (type === 'tag') {
+        h = '<h3>添加标签</h3><label style="font-size:11px;color:#8a7a66">标签内容（1-8字）</label><input id="esTag" maxlength="8" placeholder="如：推理大师">'
+            + '<div class="erow"><button class="ebtn" onclick="closeEditSheet()">取消</button><button class="ebtn primary" onclick="addTag()">添加</button></div>';
+    } else if (type === 'mark') {
+        h = '<h3>添加自定义标记</h3><label style="font-size:11px;color:#8a7a66">标记内容（1-6字，对局里贴玩家标签用）</label><input id="esMark" maxlength="6" placeholder="如：铁狼">'
+            + '<div class="erow"><button class="ebtn" onclick="closeEditSheet()">取消</button><button class="ebtn primary" onclick="addMark()">添加</button></div>';
+    }
+    sheet.innerHTML = h;
+    mask.classList.add('show');
+    sheet.classList.add('show');
+};
+window.closeEditSheet = function() {
+    const sheet = getEl('editSheet'), mask = getEl('editMask');
+    if (sheet) sheet.classList.remove('show');
+    if (mask) mask.classList.remove('show');
+};
+function esMsg(text, ok) { const el = getEl('esMsg'); if (el) { el.textContent = text; el.className = 'emsg' + (ok ? ' ok' : ''); } }
+
+window.saveNickname = async function() {
+    const nn = (getEl('esNick')?.value || '').trim();
+    if (!nn) { esMsg('请输入昵称', false); return; }
+    try {
+        const r = await fetch('/api/update-nickname', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(currentUser?.token||'')}, body: JSON.stringify({ email: currentUser.email, nickname: nn }) });
+        const d = await r.json();
+        if (!r.ok) { esMsg(d.error || '修改失败', false); return; }
+        currentUser.nickname = d.nickname;
+        localStorage.setItem('amnesia_user', JSON.stringify(currentUser));
+        if (userNickname) userNickname.textContent = currentUser.nickname;
+        renderProfile(); closeEditSheet();
+    } catch(e) { esMsg('网络错误', false); }
+};
+window.saveSignature = async function() {
+    const sig = (getEl('esSig')?.value || '').trim();
+    try {
+        const r = await fetch('/api/update-signature', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(currentUser?.token||'')}, body: JSON.stringify({ email: currentUser.email, signature: sig }) });
+        const d = await r.json();
+        if (!r.ok) { esMsg(d.error || '修改失败', false); return; }
+        currentUser.signature = d.signature;
+        localStorage.setItem('amnesia_user', JSON.stringify(currentUser));
+        renderProfile(); closeEditSheet();
+    } catch(e) { esMsg('网络错误', false); }
+};
+window.changePw = async function() {
+    const o = getEl('esOld')?.value || '', n = getEl('esNew')?.value || '', c = getEl('esConfirm')?.value || '';
+    if (!o || !n) { esMsg('请填写完整', false); return; }
+    if (n.length < 6) { esMsg('新密码至少6位', false); return; }
+    if (n !== c) { esMsg('两次密码不一致', false); return; }
+    try {
+        const r = await fetch('/api/change-password', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(currentUser?.token||'')}, body: JSON.stringify({ email: currentUser.email, oldPassword: o, newPassword: n }) });
+        const d = await r.json();
+        if (r.ok) { esMsg('密码已修改', true); setTimeout(closeEditSheet, 800); }
+        else esMsg(d.error || '修改失败', false);
+    } catch(e) { esMsg('网络错误', false); }
+};
+window.sendResetCode = async function() {
+    const email = (getEl('esEmail')?.value || '').trim();
+    if (!email) { esMsg('请输入邮箱', false); return; }
+    try {
+        const r = await fetch('/api/send-code', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email }) });
+        const d = await r.json();
+        if (r.ok) esMsg('验证码已发送', true);
+        else esMsg(d.error || '发送失败', false);
+    } catch(e) { esMsg('网络错误', false); }
+};
+window.resetPw = async function() {
+    const email = (getEl('esEmail')?.value || '').trim(), code = (getEl('esCode')?.value || '').trim(), n = getEl('esNewPw')?.value || '';
+    if (!email || !code || !n) { esMsg('请填写完整', false); return; }
+    if (n.length < 6) { esMsg('新密码至少6位', false); return; }
+    try {
+        const r = await fetch('/api/reset-password', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ email, code, newPassword: n }) });
+        const d = await r.json();
+        if (r.ok) esMsg('密码已重置，请重新登录', true);
+        else esMsg(d.error || '重置失败', false);
+    } catch(e) { esMsg('网络错误', false); }
+};
+window.addTag = function() {
+    const t = (getEl('esTag')?.value || '').trim();
+    if (!t) return;
+    const tags = Array.isArray(currentUser.tags) ? currentUser.tags.slice() : [];
+    if (tags.length >= 8) { alert('最多8个标签'); return; }
+    tags.push(t.slice(0, 8));
+    saveTags(tags);
+    closeEditSheet();
+};
+window.removeTagAt = function(i) {
+    const tags = Array.isArray(currentUser.tags) ? currentUser.tags.slice() : [];
+    tags.splice(i, 1);
+    saveTags(tags);
+};
+async function saveTags(tags) {
+    try {
+        const r = await fetch('/api/update-tags', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(currentUser?.token||'')}, body: JSON.stringify({ email: currentUser.email, tags }) });
+        const d = await r.json();
+        if (r.ok) { currentUser.tags = d.tags; localStorage.setItem('amnesia_user', JSON.stringify(currentUser)); renderProfile(); }
+    } catch(e) {}
+}
+// 自定义标记（对局贴标签，与个人标签独立）
+window.addMark = function() {
+    const m = (getEl('esMark')?.value || '').trim();
+    if (!m) return;
+    const marks = Array.isArray(currentUser.marks) ? currentUser.marks.slice() : [];
+    if (marks.length >= 12) { alert('最多12个标记'); return; }
+    marks.push(m.slice(0, 6));
+    saveMarks(marks);
+    closeEditSheet();
+};
+window.removeMarkAt = function(i) {
+    const marks = Array.isArray(currentUser.marks) ? currentUser.marks.slice() : [];
+    marks.splice(i, 1);
+    saveMarks(marks);
+};
+async function saveMarks(marks) {
+    try {
+        const r = await fetch('/api/update-marks', { method:'POST', headers:{'Content-Type':'application/json','Authorization':'Bearer '+(currentUser?.token||'')}, body: JSON.stringify({ email: currentUser.email, marks }) });
+        const d = await r.json();
+        if (r.ok) { currentUser.marks = d.marks; localStorage.setItem('amnesia_user', JSON.stringify(currentUser)); renderProfile(); }
+    } catch(e) {}
+}
+
 // ★ 默认头像：干净的深色人物剪影（SVG data URI，不依赖任何图片文件）
 const DEFAULT_AVATAR = "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='24' r='15' fill='%23b8a888'/%3E%3Cpath d='M6 62c0-15 11-22 26-22s26 7 26 22v2H6z' fill='%23b8a888'/%3E%3C/svg%3E";
 
@@ -71,7 +386,7 @@ if (avatarImg) {
     // 异步从服务器同步最新头像（用户上传后无需重登即可生效）
     (async () => {
         try {
-            const r = await fetch('/api/me?email=' + encodeURIComponent(currentUser.email));
+            const r = await fetch('/api/me?email=' + encodeURIComponent(currentUser.email), { headers: { 'Authorization': 'Bearer ' + (currentUser?.token || '') } });
             if (r.ok) {
                 const fresh = await r.json();
                 if (fresh.avatar) {
@@ -166,6 +481,8 @@ if (avatarImg) {
 
     // ========== 游戏状态 ==========
     let ws = null;
+    let wsReady = false;            // ★ WebSocket 已完成 auth 握手（收到 connected）
+    let wsPending = [];             // ★ 等待握手的消息队列
     let roomId = null;
     let myNumber = null;
     let isHost = false;
@@ -234,8 +551,7 @@ if (avatarImg) {
     // ========== 语音核心 ==========
     // ★★★ WebRTC P2P 语音（媒体不经过服务器；信令走 WS JSON 通道） ★★★
     function sendSignal(targetNumber, signal) {
-        if (!ws || ws.readyState !== 1) return;
-        try { ws.send(JSON.stringify({ type: 'signal', targetNumber, signal })); } catch(e) {}
+        sendWS({ type: 'signal', targetNumber, signal });
     }
 
     function createRemoteAudio(number, stream) {
@@ -380,9 +696,7 @@ if (avatarImg) {
         if (analyserNode) { try { analyserNode.disconnect(); } catch (e) {} analyserNode = null; }
         isSpeaking = false;
         updatePlayerVolume(myNumber, 0);
-        if (ws && ws.readyState === 1) {
-            try { ws.send(JSON.stringify({ type: 'volume', number: myNumber, volume: 0 })); } catch(e) {}
-        }
+        sendWS({ type: 'volume', number: myNumber, volume: 0 });
     }
 
     // ★ 完全释放本地麦克风（仅退出/断线/降级通道时调用）
@@ -438,9 +752,7 @@ if (avatarImg) {
                 }
                 const vol = Math.min(1, Math.sqrt(sum / dataArray.length) * 2);
                 updatePlayerVolume(myNumber, vol);
-                if (ws && ws.readyState === 1) {
-                    try { ws.send(JSON.stringify({ type: 'volume', number: myNumber, volume: vol })); } catch(e) {}
-                }
+                sendWS({ type: 'volume', number: myNumber, volume: vol });
             }, 100);
             if (webRTCSupported && peerConnections.size > 0) {
                 // WebRTC 模式：无需 MediaRecorder
@@ -479,7 +791,7 @@ if (avatarImg) {
         }
         await destroyRecorder();
     }
-    async function endTurn() { await destroyRecorder(); if (ws) ws.send(JSON.stringify({ type: 'end_speak' })); }
+    async function endTurn() { await destroyRecorder(); sendWS({ type: 'end_speak' }); }
 
     // ========== 语音接收（★ 重构：按发言人独立 MediaSource 播放链） ==========
     // 根因：旧实现所有发言人共用同一个 SourceBuffer，每个 MediaRecorder 会话自带 init segment，
@@ -639,22 +951,39 @@ if (avatarImg) {
     }
 
     // ========== WebSocket ==========
+    // ★ 发送消息：auth 握手未完成前先入队，connected 后统一 flush
+    function sendWS(obj) {
+        if (ws && ws.readyState === 1 && wsReady) {
+            ws.send(JSON.stringify(obj));
+        } else {
+            wsPending.push(obj);
+        }
+    }
+
     function connectWebSocket() {
         if (ws && ws.readyState === 1) return;
         if (ws) { ws.onclose = null; ws.close(); }
-        ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host + '?playerId=' + encodeURIComponent(currentUser.email));
+        wsReady = false;
+        // ★ token 不再放 URL（避免 nginx 日志泄露），改为连接后首条 auth 消息
+        ws = new WebSocket((location.protocol === 'https:' ? 'wss:' : 'ws:') + '//' + location.host);
         ws.binaryType = 'arraybuffer';
 
         ws.onopen = () => {
             console.log('WebSocket 连接成功');
-            if (statusArea) statusArea.innerText = statusArea.innerText.replace('🔴 连接断开，重连中…', '');
+            // 发送认证消息（token 走消息体，不走 URL）
+            if (currentUser && currentUser.token) {
+                ws.send(JSON.stringify({ type: 'auth', token: currentUser.token }));
+            } else {
+                ws.close();
+            }
         };
-ws.onclose = () => {
-    destroyRecorder();
-    if (statusArea) statusArea.innerText = '🔴 连接断开，重连中…';
-    addChatLog('❌ 连接断开，尝试重连...');
-    if (roomId) setTimeout(connectWebSocket, 3000);
-};
+        ws.onclose = () => {
+            wsReady = false;
+            destroyRecorder();
+            if (statusArea) statusArea.innerText = '🔴 连接断开，重连中…';
+            addChatLog('❌ 连接断开，尝试重连...');
+            if (roomId) setTimeout(connectWebSocket, 3000);
+        };
 
         ws.onmessage = (e) => {
             if (e.data instanceof ArrayBuffer) {
@@ -668,7 +997,18 @@ ws.onclose = () => {
             }
             try {
                 const msg = JSON.parse(e.data);
-                if (msg.type === 'connected') return;
+                if (msg.type === 'connected') {
+                    wsReady = true;
+                    if (statusArea) statusArea.innerText = statusArea.innerText.replace('🔴 连接断开，重连中…', '');
+                    // ★ 握手完成后 flush 排队消息，并自动重进房间（恢复状态）
+                    const pending = wsPending.slice();
+                    wsPending = [];
+                    if (roomId && currentUser && currentUser.nickname) {
+                        ws.send(JSON.stringify({ type: 'join', name: currentUser.nickname, roomId }));
+                    }
+                    pending.forEach(obj => { if (ws.readyState === 1) ws.send(JSON.stringify(obj)); });
+                    return;
+                }
                 if (msg.type === 'kicked_offline') {
                     // ★ 账号在其他设备登录：停止重连并跳回登录页
                     alert(msg.message || '账号已在其他设备登录');
@@ -680,7 +1020,7 @@ ws.onclose = () => {
                                 if (msg.type === 'volume') { updatePlayerVolume(msg.number, msg.volume); return; }
                 if (msg.type === 'signal') { handleSignal(msg.fromNumber, msg.signal); return; }
                 if (msg.type === 'game_in_progress') {
-                    if (confirm('游戏已开始，是否观战？')) ws.send(JSON.stringify({ type:'spectate', roomId:msg.roomId, name:currentUser.nickname }));
+                    if (confirm('游戏已开始，是否观战？')) sendWS({ type:'spectate', roomId:msg.roomId, name:currentUser.nickname });
                     else ws.close();
                     return;
                 }
@@ -776,6 +1116,7 @@ ws.onclose = () => {
                     safeDisplay(loginPanel, 'none'); safeDisplay(gamePanel, 'block'); safeDisplay(gameCornerButtons, 'flex');
                     enableChat(true); updateStartButton();
                     setPhaseIndicator('等待开始', '', 0);
+                    loadPresetRoles(msg.preset);
                 } else if (msg.type === 'joined') {
       roomId = msg.roomId; myNumber = msg.yourNumber; isHost = !!msg.isHost;
       flipCards = msg.flipCards || [];
@@ -783,6 +1124,7 @@ ws.onclose = () => {
       safeDisplay(loginPanel, 'none'); safeDisplay(gamePanel, 'block'); safeDisplay(gameCornerButtons, 'flex');
       enableChat(true); updateStartButton();
       setPhaseIndicator('等待开始', '', 0);
+      loadPresetRoles(msg.preset);
       // ★ WebRTC：加入后同步 P2P 连接（player_list 可能先于 joined 到达导致此前 reconcile 被 myNumber 门控跳过）
       reconcilePeers();
     } else if (msg.type === 'player_list') {
@@ -904,7 +1246,7 @@ ws.onclose = () => {
                         msg.roles.sort((a,b) => a.number - b.number).forEach(r => h += `<div>${r.number}号 ${r.name}: ${r.role} ${r.alive ? '' : '☠️'}</div>`);
                         h += '</div>'; if(isHost) h += '<button class="memory-btn w-full mt-4" id="resetRoomBtn">↻ 重新激活</button>';
                         actionCard.innerHTML = h;
-                        if(isHost) { const btn = getEl('resetRoomBtn'); if(btn) btn.onclick = () => ws.send(JSON.stringify({ type: 'reset_room' })); }
+                        if(isHost) { const btn = getEl('resetRoomBtn'); if(btn) btn.onclick = () => sendWS({ type: 'reset_room' }); }
                     }
                     // ★ 游戏结束公示：全员身份揭晓
                     if (msg.roles && msg.roles.length) {
@@ -1012,17 +1354,23 @@ ws.onclose = () => {
             const statusCls = p.alive ? (showDisconnected ? 'off' : 'alive') : 'dead';
             const statusTxt = p.alive ? (showDisconnected ? '离线' : '在场') : '已死亡';
             const deadX = p.alive ? '' : '<span class="pw-dead-x">☠</span>';
+            // ★ 身份标记角标（本地保存，仅自己可见，用于推理）
+            const myMark = getPlayerMark(p.number);
+            const markBadge = myMark ? `<span class="pw-mark-badge mk-${myMark.key}">${myMark.label}</span>` : '';
             return `<div class="pw-card ${p.alive ? '' : 'dead'} ${showDisconnected ? 'disconnected' : ''}" data-num="${p.number}">
-                ${kickBtn}${deadX}
+                ${kickBtn}${deadX}${markBadge}
                 <img src="${avatarUrl}" class="pw-avatar" onerror="this.src='${DEFAULT_AVATAR}'">
                 <div class="pw-info">
                     <div class="pw-name"><span class="num">${p.number}号</span><span class="nm">${p.name}</span>${crown}${isMe ? '<span class="me-tag">我</span>' : ''}</div>
                     <div class="pw-status"><span class="dot ${statusCls}"></span>${statusTxt}</div>
                 </div>
                 <div class="pw-volume"><i data-vol="${p.number}"></i></div>
+                <button class="pw-mark-btn" data-mark="${p.number}" title="标记身份">✎</button>
             </div>`;
         }
         playerListDiv.innerHTML = `<div id="playerListCol">${left.map(cardHtml).join('')}</div><div id="playerListCol">${right.map(cardHtml).join('')}</div>`;
+        // ★ 绑定身份标记按钮
+        bindMarkButtons();
         // ★ 我的回合时，给存活目标卡片挂上"点击展开行动"事件（bindNightTargetClicks 内部有守卫）
         bindNightTargetClicks();
         // ★ 投票阶段：点卡片投票
@@ -1115,7 +1463,7 @@ ws.onclose = () => {
                 submitBtn.addEventListener('click', (ev) => {
                     ev.stopPropagation();
                     if (selAct && selFlip !== undefined) {
-                        if (ws) ws.send(JSON.stringify({ type: 'night_action', action: selAct, target: num, flipCard: selFlip }));
+                        sendWS({ type: 'night_action', action: selAct, target: num, flipCard: selFlip });
                         area.innerHTML = '<p style="text-align:center;padding:6px;color:#8fae98;font-size:12px;">✅ 已行动</p>';
                         isMyActionTurn = false;
                         document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
@@ -1142,7 +1490,7 @@ ws.onclose = () => {
         fd.append('avatar', file);
         fd.append('email', currentUser.email);
         const btn = e.target;
-        fetch('/api/upload-avatar', { method: 'POST', body: fd })
+        fetch('/api/upload-avatar', { method: 'POST', headers: { 'Authorization': 'Bearer ' + (currentUser?.token || '') }, body: fd })
             .then(r => r.json())
             .then(data => {
                 if (data && data.avatar) {
@@ -1237,7 +1585,7 @@ ws.onclose = () => {
             const finalFlip = (selected === undefined) ? null : selected;
             overlay.remove();
             if (sourceArea) sourceArea.innerHTML = '<p style="text-align:center;padding:6px;color:#8fae98;font-size:12px;">✅ 已行动</p>';
-            if (ws) ws.send(JSON.stringify({ type: 'night_action', action: actionType, target: targetNumber, flipCard: finalFlip }));
+            sendWS({ type: 'night_action', action: actionType, target: targetNumber, flipCard: finalFlip });
             isMyActionTurn = false;
             document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
             if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已提交行动</p>';
@@ -1297,7 +1645,7 @@ ws.onclose = () => {
                     e.stopPropagation();
                     if (ws && !hasVoted) {
                         hasVoted = true;
-                        ws.send(JSON.stringify({ type: 'vote', target: num }));
+                        sendWS({ type: 'vote', target: num });
                         document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
                         if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已投票，等待其他玩家…</p>';
                     }
@@ -1306,7 +1654,7 @@ ws.onclose = () => {
                     e.stopPropagation();
                     if (ws && !hasVoted) {
                         hasVoted = true;
-                        ws.send(JSON.stringify({ type: 'vote', target: -1 }));
+                        sendWS({ type: 'vote', target: -1 });
                         document.querySelectorAll('.pw-action-area').forEach(a => a.remove());
                         if (actionCard) actionCard.innerHTML = '<p class="text-center py-6 text-xl">✅ 已弃权</p>';
                     }
@@ -1458,6 +1806,41 @@ ws.onclose = () => {
     }
     loadPresets();
 
+    // ★ 板子构成查看：读取当前选中板子，按阵营分组展示角色
+    const CAMP_MAP = { '凶手': '凶手阵营', '虚构者': '凶手阵营', '侦探': '好人阵营', '错构者': '好人阵营', '精神分裂': '好人阵营', '失忆者': '好人阵营', '精神病': '中立阵营', '人格分裂': '中立阵营' };
+    window.showPresetDetail = async () => {
+        const c = getEl('presetDetailContent');
+        if (!c) return;
+        const name = presetSelect?.value || '8人进阶';
+        c.innerHTML = '加载中...';
+        window.showModal('presetModal');
+        try {
+            const r = await fetch('/admin/presets');
+            const d = await r.json();
+            const cfg = d && d.presets ? d.presets[name] : null;
+            if (!cfg) { c.innerHTML = '<p>板子不存在</p>'; return; }
+            // 按阵营分组
+            const groups = { '凶手阵营': [], '好人阵营': [], '中立阵营': [] };
+            for (const [role, cnt] of Object.entries(cfg)) {
+                const camp = CAMP_MAP[role] || '好人阵营';
+                groups[camp].push({ role, cnt });
+            }
+            const total = Object.values(cfg).reduce((a,b) => a + b, 0);
+            let h = `<p style="color:#b89a7a;margin-bottom:12px">${name} · 共 ${total} 人</p>`;
+            const campColors = { '凶手阵营': '#e86a5a', '好人阵营': '#6fae78', '中立阵营': '#e8c46a' };
+            for (const [camp, list] of Object.entries(groups)) {
+                if (!list.length) continue;
+                h += `<div style="margin:10px 0 6px;font-weight:bold;color:${campColors[camp]}">${camp}</div>`;
+                h += `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:6px">`;
+                list.forEach(({role, cnt}) => {
+                    h += `<span style="background:rgba(180,150,120,.1);border:1px solid rgba(180,150,120,.25);border-radius:6px;padding:4px 12px;font-size:13px;color:#e3dbcd">${role} ×${cnt}</span>`;
+                });
+                h += `</div>`;
+            }
+            c.innerHTML = h;
+        } catch(e) { c.innerHTML = '加载失败'; }
+    };
+
     // ========== 全局按钮函数 ==========
     window.showCreate = () => { safeDisplay(createPanel, 'block'); safeDisplay(joinPanel, 'none'); };
     window.showJoin = () => { safeDisplay(joinPanel, 'block'); safeDisplay(createPanel, 'none'); };
@@ -1465,8 +1848,7 @@ ws.onclose = () => {
     window.createRoom = function() {
         if (!currentUser || !currentUser.nickname) return alert('请先登录');
         connectWebSocket();
-        const sendCreate = () => { if (!ws || ws.readyState !== 1) return; ws.send(JSON.stringify({ type: 'create', name: currentUser.nickname, preset: presetSelect?.value || '8人进阶', isPublic: publicRoomCheck?.checked ?? true })); };
-        if (ws && ws.readyState === 1) sendCreate(); else if (ws) ws.onopen = sendCreate;
+        sendWS({ type: 'create', name: currentUser.nickname, preset: presetSelect?.value || '8人进阶', isPublic: publicRoomCheck?.checked ?? true });
     };
 
     window.joinRoom = function() {
@@ -1474,13 +1856,12 @@ ws.onclose = () => {
         if (!rid) return alert('输入档案编号');
         if (!currentUser || !currentUser.nickname) return alert('请先登录');
         connectWebSocket();
-        const sendJoin = () => { if (!ws || ws.readyState !== 1) return; ws.send(JSON.stringify({ type: 'join', name: currentUser.nickname, roomId: rid })); };
-        if (ws && ws.readyState === 1) sendJoin(); else if (ws) ws.onopen = sendJoin;
+        sendWS({ type: 'join', name: currentUser.nickname, roomId: rid });
     };
 
-    window.kickPlayer = t => { if (isHost && ws) ws.send(JSON.stringify({ type: 'kick', target: t })); };
-    window.startGame = () => { if (isHost && ws) ws.send(JSON.stringify({ type: 'start_game' })); };
-    window.sendChat = () => { const m = chatInput?.value.trim(); if (!m || !ws) return; if (phase === 'waiting' || phase === 'gameover' || (phase === 'day' && canSpeak) || isSpectator) { ws.send(JSON.stringify({ type: 'chat', message: m })); chatInput.value = ''; } else alert('现在不能发言'); };
+    window.kickPlayer = t => { if (isHost && ws) sendWS({ type: 'kick', target: t }); };
+    window.startGame = () => { if (isHost && ws) sendWS({ type: 'start_game' }); };
+    window.sendChat = () => { const m = chatInput?.value.trim(); if (!m || !ws) return; if (phase === 'waiting' || phase === 'gameover' || (phase === 'day' && canSpeak) || isSpectator) { sendWS({ type: 'chat', message: m }); chatInput.value = ''; } else alert('现在不能发言'); };
 
     window.leaveRoom = () => {
     destroyRecorder(); stopSpeakCountdown();
@@ -1504,5 +1885,37 @@ ws.onclose = () => {
     };
 
     window.addEventListener('beforeunload', () => destroyRecorder());
-    console.log('✅ 完整功能版已加载');
+console.log('✅ 完整功能版已加载');
+
+    // ★ 移动端软键盘处理：键盘弹出时隐藏底部悬浮导航，避免挡视角/顶在键盘上
+    const bottomNav = document.querySelector('.bottom-nav');
+    if (bottomNav) {
+        // 记录键盘关闭时的完整可视高度作为基准（加载时假定键盘是收起的）
+        let baseH = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+        if (window.visualViewport) {
+            window.visualViewport.addEventListener('resize', () => {
+                const vh = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+                // 键盘弹出后可视高度明显小于基准 → 隐藏导航
+                if (baseH - vh > 80) {
+                    bottomNav.style.display = 'none';
+                } else {
+                    bottomNav.style.display = '';
+                    baseH = vh; // 键盘收起后更新基准，防止旋转屏幕等场景误判
+                }
+            });
+        }
+        // iOS 等不支持 visualViewport 的兜底：focus/blur 检测输入框
+        document.addEventListener('focusin', (e) => {
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+                bottomNav.style.display = 'none';
+            }
+        });
+        document.addEventListener('focusout', (e) => {
+            const t = e.target;
+            if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA')) {
+                bottomNav.style.display = '';
+            }
+        });
+    }
 })();

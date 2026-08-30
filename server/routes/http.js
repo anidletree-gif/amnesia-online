@@ -2,8 +2,9 @@ const fs = require('fs');
 const path = require('path');
 const url = require('url');
 const config = require('../config');
-const { register, login, updateAvatar, updateNickname, isAllowedEmail, getUser, upload } = require('../core/auth');
+const { register, login, updateAvatar, updateNickname, updateSignature, updateTags, updateMarks, changePassword, resetPasswordByEmail, isAllowedEmail, getUser, upload, getAllUsers, adminDeleteUser, adminResetPassword, verifySession, isAdminLogin, createSession } = require('../core/auth');
 const { sendVerificationCode, verifyCode } = require('../mailer');
+const gameCore = require('../core/game');
 // ★ presets.json 缺失兜底，避免启动崩溃
 let presetsData = {};
 try { presetsData = require('../presets.json'); } catch(e) { presetsData = {}; }
@@ -23,6 +24,46 @@ function getAdminPassword() {
     }
 }
 
+// ★ admin 鉴权：从 query 或 Authorization Bearer 取 token，验证为管理员会话则返回 true
+function isAdminRequest(req) {
+    const qToken = req._parsedUrl?.query?.token || url.parse(req.url, true).query.token;
+    let token = qToken;
+    const auth = req.headers.authorization || '';
+    if (!token && auth.startsWith('Bearer ')) token = auth.slice(7);
+    if (!token) return false;
+    const s = verifySession(token);
+    return !!(s && s.isAdmin);
+}
+
+// ★ 普通用户鉴权：从 Authorization Bearer 或 query 取 token，返回会话或 null
+function readToken(req) {
+    const auth = req.headers.authorization || '';
+    if (auth.startsWith('Bearer ')) return auth.slice(7);
+    return url.parse(req.url, true).query.token || '';
+}
+
+// ★ 校验 token 且会话邮箱与请求目标邮箱一致，防冒充
+function requireUserAuth(req, res, email) {
+    const token = readToken(req);
+    if (!token) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '未登录' }));
+        return null;
+    }
+    const s = verifySession(token);
+    if (!s) {
+        res.writeHead(401, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '登录已失效，请重新登录' }));
+        return null;
+    }
+    if (email && s.email !== email) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: '无权操作' }));
+        return null;
+    }
+    return s;
+}
+
 function handleHttp(req, res) {
     const reqHost = req.headers.host?.split(':')[0];
     const isLocal = reqHost === '127.0.0.1' || reqHost === 'localhost' || req.socket?.localAddress === '127.0.0.1';
@@ -39,22 +80,86 @@ function handleHttp(req, res) {
     const parsedUrl = url.parse(req.url, true);
     const pathname = parsedUrl.pathname;
 
-    // 管理面板
+    // 管理面板（★ token 会话鉴权，未登录一律 404 不暴露后台存在）
     if (pathname === '/admin') {
-        const auth = req.headers.authorization;
-        if (!auth || !auth.startsWith('Basic ')) {
-            res.writeHead(401, { 'WWW-Authenticate': 'Basic realm="Admin"' });
-            res.end('Unauthorized');
+        if (!isAdminRequest(req)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Not Found');
             return;
         }
-        const cred = Buffer.from(auth.slice(6), 'base64').toString().split(':');
-        if (cred[1] !== getAdminPassword()) {
-            res.writeHead(403);
-            res.end('Forbidden');
+        const adminHtmlPath = path.join(__dirname, '..', 'public', 'admin.html');
+        fs.readFile(adminHtmlPath, (err, data) => {
+            if (err) {
+                res.writeHead(404);
+                res.end('Not Found');
+                return;
+            }
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end(data);
+        });
+        return;
+    }
+
+    // ★ 后台API：全部以 /admin/ 开头且非 /admin/presets(GET供前端板子详情用) 的接口都需要管理员鉴权
+    if (pathname.startsWith('/admin/') && !(pathname === '/admin/presets' && req.method === 'GET')) {
+        if (!isAdminRequest(req)) {
+            res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+            res.end('Not Found');
             return;
         }
-        res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-        res.end(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>管理面板</title><style>body{background:#121212;color:#eee;font-family:sans-serif;padding:20px} textarea{width:100%;height:300px;background:#1e1e1e;color:#fff} button{background:#5f7e6b;padding:10px 20px;border-radius:30px;color:#fff;border:none;margin:5px;}</style></head><body><h1>板子配置</h1><p>当前激活: <span id="activeName">${activePreset}</span></p><textarea id="presetsJson">${JSON.stringify(presets, null, 2)}</textarea><br><button onclick="savePresets()">保存</button><button onclick="setActive()">设为默认</button><script>async function savePresets(){try{const p=JSON.parse(document.getElementById('presetsJson').value);await fetch('/admin/presets',{method:'POST',body:JSON.stringify({presets:p,active:'${activePreset}'})});alert('保存成功');}catch(e){alert('JSON错误');}} async function setActive(){const n=prompt('预设名称');if(n){await fetch('/admin/presets',{method:'POST',body:JSON.stringify({presets:${JSON.stringify(presets)},active:n})});location.reload();}}</script></body></html>`);
+    }
+
+    // ★ 后台API：统计
+    if (pathname === '/admin/stats' && req.method === 'GET') {
+        const users = getAllUsers();
+        const rooms = gameCore.getAllRooms();
+        const inGamePlayers = rooms.reduce((sum, r) => sum + r.playerCount, 0);
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ totalUsers: users.length, activeRooms: rooms.filter(r => r.gameStarted).length, inGamePlayers, presets: Object.keys(presets).length }));
+        return;
+    }
+
+    // ★ 后台API：全部房间
+    if (pathname === '/admin/rooms' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(gameCore.getAllRooms()));
+        return;
+    }
+
+    // ★ 后台API：全部用户
+    if (pathname === '/admin/users' && req.method === 'GET') {
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(getAllUsers()));
+        return;
+    }
+
+    // ★ 后台API：删除用户
+    if (pathname === '/admin/users/delete' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email } = JSON.parse(body);
+                const err = adminDeleteUser(email);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(err ? JSON.stringify({ ok: false, error: err }) : JSON.stringify({ ok: true }));
+            } catch(e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+        });
+        return;
+    }
+
+    // ★ 后台API：重置密码
+    if (pathname === '/admin/users/reset' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email, password } = JSON.parse(body);
+                const err = adminResetPassword(email, password);
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(err ? JSON.stringify({ ok: false, error: err }) : JSON.stringify({ ok: true }));
+            } catch(e) { res.writeHead(400, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ ok: false, error: e.message })); }
+        });
         return;
     }
 
@@ -156,7 +261,7 @@ function handleHttp(req, res) {
         return;
     }
 
-    // 登录
+    // 登录（管理员也是 users.json 里的真实用户，统一走 login，role 区分权限）
     if (pathname === '/api/login' && req.method === 'POST') {
         let body = '';
         req.on('data', c => body += c);
@@ -184,6 +289,7 @@ function handleHttp(req, res) {
     if (pathname === '/api/me' && req.method === 'GET') {
         try {
             const email = new URL(req.url, 'http://x').searchParams.get('email') || '';
+            if (!requireUserAuth(req, res, email)) return;
             const u = getUser(email);
             if (u) {
                 res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -213,6 +319,7 @@ function handleHttp(req, res) {
                 res.end(JSON.stringify({ error: '缺少用户标识' }));
                 return;
             }
+            if (!requireUserAuth(req, res, email)) return;
             const avatarPath = '/avatars/' + req.file.filename;
             updateAvatar(email, avatarPath, (err, user) => {
                 if (err) {
@@ -234,6 +341,7 @@ function handleHttp(req, res) {
         req.on('end', () => {
             try {
                 const { email, nickname } = JSON.parse(body);
+                if (!requireUserAuth(req, res, email)) return;
                 updateNickname(email, nickname, (err, user) => {
                     if (err) {
                         res.writeHead(400, { 'Content-Type': 'application/json' });
@@ -241,6 +349,130 @@ function handleHttp(req, res) {
                     } else {
                         res.writeHead(200, { 'Content-Type': 'application/json' });
                         res.end(JSON.stringify(user));
+                    }
+                });
+            } catch(e) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // 修改密码
+    if (pathname === '/api/change-password' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email, oldPassword, newPassword } = JSON.parse(body);
+                if (!requireUserAuth(req, res, email)) return;
+                changePassword(email, oldPassword, newPassword, (err) => {
+                    if (err) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: err }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: true }));
+                    }
+                });
+            } catch(e) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // 更新个性签名
+    if (pathname === '/api/update-signature' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email, signature } = JSON.parse(body);
+                if (!requireUserAuth(req, res, email)) return;
+                updateSignature(email, signature, (err, user) => {
+                    if (err) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: err }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(user));
+                    }
+                });
+            } catch(e) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // 更新自定义标记（对局贴标签，与个人标签独立）
+    if (pathname === '/api/update-marks' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email, marks } = JSON.parse(body);
+                if (!requireUserAuth(req, res, email)) return;
+                updateMarks(email, marks, (err, user) => {
+                    if (err) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: err }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(user));
+                    }
+                });
+            } catch(e) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // 更新个人标签
+    if (pathname === '/api/update-tags' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email, tags } = JSON.parse(body);
+                if (!requireUserAuth(req, res, email)) return;
+                updateTags(email, tags, (err, user) => {
+                    if (err) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: err }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify(user));
+                    }
+                });
+            } catch(e) {
+                res.writeHead(400);
+                res.end(JSON.stringify({ error: e.message }));
+            }
+        });
+        return;
+    }
+
+    // 找回密码（邮箱验证码重置，不校验旧密码）
+    if (pathname === '/api/reset-password' && req.method === 'POST') {
+        let body = '';
+        req.on('data', c => body += c);
+        req.on('end', () => {
+            try {
+                const { email, code, newPassword } = JSON.parse(body);
+                resetPasswordByEmail(email, code, newPassword, (err) => {
+                    if (err) {
+                        res.writeHead(400, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ error: err }));
+                    } else {
+                        res.writeHead(200, { 'Content-Type': 'application/json' });
+                        res.end(JSON.stringify({ ok: true }));
                     }
                 });
             } catch(e) {
@@ -291,7 +523,12 @@ function handleHttp(req, res) {
             res.writeHead(404);
             res.end('Not found');
         } else {
-            res.writeHead(200, { 'Content-Type': mime[ext] || 'application/octet-stream' });
+            const mimeType = mime[ext] || 'application/octet-stream';
+            // ★ 强制 HTML/JS/CSS/JSON 每次校验，避免前端更新后浏览器用旧缓存
+            const cacheable = ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.ico', '.wav', '.mp3', '.opus'].includes(ext);
+            const headers = { 'Content-Type': mimeType };
+            if (!cacheable) headers['Cache-Control'] = 'no-cache, no-store, must-revalidate';
+            res.writeHead(200, headers);
             res.end(data);
         }
     });
